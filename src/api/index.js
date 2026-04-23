@@ -5,14 +5,17 @@ const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
 export const getToken = () => localStorage.getItem('ksmcm_token') || ''
 
 const request = async (method, path, body = null) => {
+    const isFormData = body instanceof FormData
+
     const options = {
         method,
         headers: {
-            'Content-Type': 'application/json',
+            ...(!isFormData && { 'Content-Type': 'application/json' }),
             'Authorization': `Bearer ${getToken()}`,
         },
     }
-    if (body) options.body = JSON.stringify(body)
+
+    if (body) options.body = isFormData ? body : JSON.stringify(body)
 
     const res = await fetch(`${BASE_URL}${path}`, options)
     const data = await res.json()

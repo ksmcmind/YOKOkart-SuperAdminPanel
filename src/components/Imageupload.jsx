@@ -1,53 +1,56 @@
 // src/components/ImageUpload.jsx
-// Reusable image upload component
-// Converts to base64 → sends to /api/upload/image → returns GCS URL
+// Does NOT upload immediately.
+// onChange(file) returns the raw File object to the parent.
+// Preview is shown via a local object URL.
+// Parent is responsible for uploading on submit.
 
-import { useState, useRef } from 'react'
-import api from '../api/index'
+import { useState, useRef, useEffect } from 'react'
 
 export default function ImageUpload({
-  label     = 'Upload Image',
-  folder    = 'general',
-  value     = null,       // current image URL
-  onChange,               // callback(url)
-  accept    = 'image/*',
+  label = 'Upload Image',
+  value = null,       // File object | existing URL string | null
+  onChange,               // callback(File | null)
+  accept = 'image/*',
   maxSizeMB = 2,
 }) {
-  const [loading, setLoading] = useState(false)
-  const [error,   setError]   = useState('')
+  const [preview, setPreview] = useState(null)
+  const [error, setError] = useState('')
   const fileRef = useRef()
 
-  const handleFile = async (file) => {
+  // Generate/revoke preview URL whenever value changes
+  useEffect(() => {
+    if (!value) {
+      setPreview(null)
+      return
+    }
+    // Already a remote URL (e.g. existing staff record)
+    if (typeof value === 'string') {
+      setPreview(value)
+      return
+    }
+    // File object — create a local preview
+    const url = URL.createObjectURL(value)
+    setPreview(url)
+    return () => URL.revokeObjectURL(url)
+  }, [value])
+
+  const handleFile = (file) => {
     if (!file) return
     setError('')
 
-    // Size check
     if (file.size > maxSizeMB * 1024 * 1024) {
       setError(`File too large. Max ${maxSizeMB}MB allowed`)
       return
     }
 
-    setLoading(true)
-    try {
-      // Convert to base64
-      const base64 = await new Promise((resolve, reject) => {
-        const reader = new FileReader()
-        reader.onload  = () => resolve(reader.result)
-        reader.onerror = reject
-        reader.readAsDataURL(file)
-      })
+    // Just pass the File up — no upload here
+    onChange(file)
+  }
 
-      // Upload to GCS via our API
-      const res = await api.post('/upload/image', { image: base64, folder })
-      if (res.success) {
-        onChange(res.data.url)
-      } else {
-        setError(res.message || 'Upload failed')
-      }
-    } catch (err) {
-      setError('Upload failed. Try again.')
-    }
-    setLoading(false)
+  const handleRemove = () => {
+    onChange(null)
+    // Reset the input so the same file can be re-selected
+    if (fileRef.current) fileRef.current.value = ''
   }
 
   return (
@@ -56,15 +59,16 @@ export default function ImageUpload({
 
       <div className="flex items-center gap-3">
         {/* Preview */}
-        {value ? (
+        {preview ? (
           <div className="relative">
             <img
-              src={value}
-              alt="uploaded"
+              src={preview}
+              alt="preview"
               className="w-16 h-16 object-cover rounded-lg border border-gray-200"
             />
             <button
-              onClick={() => onChange(null)}
+              type="button"
+              onClick={handleRemove}
               className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full text-xs flex items-center justify-center"
             >×</button>
           </div>
@@ -73,21 +77,17 @@ export default function ImageUpload({
             onClick={() => fileRef.current.click()}
             className="w-16 h-16 border-2 border-dashed border-gray-200 rounded-lg flex items-center justify-center cursor-pointer hover:border-primary-400 transition-colors"
           >
-            {loading ? (
-              <div className="animate-spin w-4 h-4 border-2 border-primary-500 border-t-transparent rounded-full" />
-            ) : (
-              <span className="text-gray-400 text-xl">+</span>
-            )}
+            <span className="text-gray-400 text-xl">+</span>
           </div>
         )}
 
         <div>
           <button
+            type="button"
             onClick={() => fileRef.current.click()}
-            disabled={loading}
             className="btn btn-secondary btn-sm"
           >
-            {loading ? 'Uploading...' : value ? 'Change' : 'Upload'}
+            {preview ? 'Change' : 'Choose'}
           </button>
           <p className="text-xs text-gray-400 mt-1">Max {maxSizeMB}MB</p>
         </div>
@@ -106,33 +106,34 @@ export default function ImageUpload({
   )
 }
 
-// ── Multi image upload ────────────────────────────────────────
-export function MultiImageUpload({ label = 'Product Images', folder = 'products', values = [], onChange, max = 5 }) {
-  const [loading, setLoading] = useState(false)
-  const [error,   setError]   = useState('')
+// ── Multi image upload ─────────────────────────────────────────────────────
+// Also deferred: returns File[] to parent, parent uploads on submit.
+export function MultiImageUpload({
+  label = 'Product Images',
+  values = [],           // Array of File | URL string
+  onChange,
+  max = 5,
+  maxSizeMB = 2,
+}) {
+  const [error, setError] = useState('')
   const fileRef = useRef()
 
-  const handleFiles = async (files) => {
+  const handleFiles = (files) => {
     if (!files.length) return
+    setError('')
+
     if (values.length + files.length > max) {
       setError(`Maximum ${max} images allowed`)
       return
     }
-    setLoading(true); setError('')
-    try {
-      const base64s = await Promise.all(
-        Array.from(files).map(file => new Promise((resolve, reject) => {
-          const reader = new FileReader()
-          reader.onload  = () => resolve(reader.result)
-          reader.onerror = reject
-          reader.readAsDataURL(file)
-        }))
-      )
-      const res = await api.post('/upload/images', { images: base64s, folder })
-      if (res.success) onChange([...values, ...res.data.urls])
-      else setError(res.message || 'Upload failed')
-    } catch { setError('Upload failed') }
-    setLoading(false)
+
+    const oversized = Array.from(files).find(f => f.size > maxSizeMB * 1024 * 1024)
+    if (oversized) {
+      setError(`Each file must be under ${maxSizeMB}MB`)
+      return
+    }
+
+    onChange([...values, ...Array.from(files)])
   }
 
   const removeImage = (idx) => onChange(values.filter((_, i) => i !== idx))
@@ -141,28 +142,53 @@ export function MultiImageUpload({ label = 'Product Images', folder = 'products'
     <div className="form-group">
       {label && <label className="label">{label} ({values.length}/{max})</label>}
       <div className="flex gap-2 flex-wrap">
-        {values.map((url, idx) => (
-          <div key={idx} className="relative">
-            <img src={url} alt={`img${idx}`} className="w-16 h-16 object-cover rounded-lg border border-gray-200" />
-            <button
-              onClick={() => removeImage(idx)}
-              className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full text-xs flex items-center justify-center"
-            >×</button>
-          </div>
+        {values.map((file, idx) => (
+          <FilePreviewThumb key={idx} file={file} onRemove={() => removeImage(idx)} />
         ))}
         {values.length < max && (
           <div
             onClick={() => fileRef.current.click()}
             className="w-16 h-16 border-2 border-dashed border-gray-200 rounded-lg flex items-center justify-center cursor-pointer hover:border-primary-400 transition-colors"
           >
-            {loading ? (
-              <div className="animate-spin w-4 h-4 border-2 border-primary-500 border-t-transparent rounded-full" />
-            ) : <span className="text-gray-400 text-xl">+</span>}
+            <span className="text-gray-400 text-xl">+</span>
           </div>
         )}
       </div>
-      <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={e => handleFiles(e.target.files)} />
+      <input
+        ref={fileRef}
+        type="file"
+        accept="image/*"
+        multiple
+        className="hidden"
+        onChange={e => handleFiles(e.target.files)}
+      />
       {error && <p className="text-xs text-red-500 mt-1">{error}</p>}
+    </div>
+  )
+}
+
+// Helper: preview thumbnail for a single File or URL string
+function FilePreviewThumb({ file, onRemove }) {
+  const [src, setSrc] = useState(null)
+
+  useEffect(() => {
+    if (!file) return
+    if (typeof file === 'string') { setSrc(file); return }
+    const url = URL.createObjectURL(file)
+    setSrc(url)
+    return () => URL.revokeObjectURL(url)
+  }, [file])
+
+  return (
+    <div className="relative">
+      {src && (
+        <img src={src} alt="preview" className="w-16 h-16 object-cover rounded-lg border border-gray-200" />
+      )}
+      <button
+        type="button"
+        onClick={onRemove}
+        className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full text-xs flex items-center justify-center"
+      >×</button>
     </div>
   )
 }

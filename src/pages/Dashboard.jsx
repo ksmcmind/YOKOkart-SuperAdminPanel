@@ -2,18 +2,18 @@
 import { useEffect, useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import { fetchMarts, selectAllMarts, selectMartsLoading } from '../store/slices/martSlice'
-import StatCard    from '../components/StatCard'
-import PageHeader  from '../components/PageHeader'
-import Badge       from '../components/Badge'
+import StatCard from '../components/StatCard'
+import PageHeader from '../components/PageHeader'
+import Badge from '../components/Badge'
 import MartSelector from '../components/MartSelector'
-import useAuth     from '../hooks/useAuth'
-import useMart     from '../hooks/useMart'
-import api         from '../api/index'
+import useAuth from '../hooks/useAuth'
+import useMart from '../hooks/useMart'
+import api from '../api/index'
 
 export default function Dashboard() {
   const dispatch = useDispatch()
-  const marts    = useSelector(selectAllMarts)
-  const loading  = useSelector(selectMartsLoading)
+  const marts = useSelector(selectAllMarts)
+  const loading = useSelector(selectMartsLoading)
   const { isSuperAdmin } = useAuth()
   const { activeMartId, selectorProps } = useMart()
   const [orders, setOrders] = useState([])
@@ -39,10 +39,10 @@ export default function Dashboard() {
     if (marts.length > 0) fetchOrders()
   }, [activeMartId, marts, isSuperAdmin])
 
-  const openMarts     = marts.filter(m => m.is_open).length
-  const totalRevenue  = orders.filter(o => o.status !== 'cancelled').reduce((s, o) => s + parseFloat(o.total || 0), 0)
+  const openMarts = marts.filter(m => m.status === 'open').length
+  const totalRevenue = orders.filter(o => o.status !== 'cancelled').reduce((s, o) => s + parseFloat(o.total || 0), 0)
   const pendingOrders = orders.filter(o => o.status === 'pending').length
-  const todayOrders   = orders.filter(o => o.status !== 'cancelled').length
+  const todayOrders = orders.filter(o => o.status !== 'cancelled').length
 
   return (
     <div>
@@ -53,10 +53,10 @@ export default function Dashboard() {
       />
 
       <div className="grid grid-cols-4 gap-4 mb-6">
-        <StatCard label="Total Marts"    value={marts.length}            icon="🏬" color="green" />
-        <StatCard label="Open Now"       value={openMarts}               icon="🟢" color="green" />
-        <StatCard label="Today Orders"   value={todayOrders}             icon="📦" color="yellow" />
-        <StatCard label="Pending"        value={pendingOrders}           icon="⏳" color="yellow" />
+        <StatCard label="Total Marts" value={marts.length} icon="🏬" color="green" />
+        <StatCard label="Open Now" value={openMarts} icon="🟢" color="green" />
+        <StatCard label="Today Orders" value={todayOrders} icon="📦" color="yellow" />
+        <StatCard label="Pending" value={pendingOrders} icon="⏳" color="yellow" />
       </div>
 
       <div className="grid grid-cols-3 gap-4 mb-6">
@@ -80,8 +80,10 @@ export default function Dashboard() {
                     <p className="text-xs text-gray-400">{mart.address}</p>
                   </div>
                   <div className="flex items-center gap-3">
-                    <Badge>{mart.is_open ? 'open' : 'closed'}</Badge>
-                    <span className="text-xs text-gray-400">{mart.delivery_radius_km || 5}km</span>
+                    <Badge>{mart.status}</Badge>
+                    <span className="text-xs text-gray-400">
+                      {mart.service_radius / 1000}km
+                    </span>
                   </div>
                 </div>
               ))}

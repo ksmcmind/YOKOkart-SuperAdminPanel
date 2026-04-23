@@ -1,8 +1,9 @@
 // src/pages/Staff.jsx
-// Uses new PG staff table — fields renamed:
-//   profileImage → profile_img_url
-//   panImage     → kyc_docs.pan
-//   aadhaarImage → kyc_docs.aadhaar
+// Images are held as File objects in form state.
+// On submit, all three files are converted to base64 and uploaded
+// in parallel via api.post('/upload/image'), then the resolved URLs
+// are sent together with the staff payload in a single createStaff call.
+
 import { useEffect, useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import {
@@ -17,7 +18,7 @@ import Table from '../components/Table'
 import Modal from '../components/Modal'
 import Badge from '../components/Badge'
 import Input, { Select } from '../components/Input'
-import ImageInput from '../components/ImageInput'
+import ImageUpload from '../components/ImageUpload'
 
 const ROLES = [
   { value: 'mart_admin', label: 'Mart Admin' },
@@ -33,8 +34,21 @@ const ROLES = [
 const EMPTY = {
   name: '', phone: '', email: '', role: 'mart_admin',
   mongoMartId: '', basicSalary: '',
-  profileImage: '', panImage: '', aadhaarImage: '',
+  profileImageFile: null,  // File | null
+  panImageFile: null,  // File | null
+  aadhaarImageFile: null,  // File | null
 }
+
+
+
+// Converts a File to base64 data URL  e.g. "data:image/jpeg;base64,..."
+const toBase64 = (file) =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(reader.result)
+    reader.onerror = reject
+    reader.readAsDataURL(file)
+  })
 
 export default function Staff() {
   const dispatch = useDispatch()
@@ -54,39 +68,52 @@ export default function Staff() {
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
+  const handleClose = () => {
+    setOpen(false)
+    setForm(EMPTY)
+  }
+
   const handleCreate = async () => {
-    // Validation
     if (!form.name || !form.phone) {
       dispatch(showToast({ message: 'Name and phone required', type: 'error' }))
       return
     }
-
-    // Super admin doesn't need mart
     if (form.role !== 'super_admin' && !form.mongoMartId) {
       dispatch(showToast({ message: 'Mart required for this role', type: 'error' }))
       return
     }
 
     setSaving(true)
-    const res = await dispatch(createStaff({
-      name: form.name,
-      phone: form.phone,
-      email: form.email,
-      role: form.role,
-      mongoMartId: form.mongoMartId || null,
-      basicSalary: parseFloat(form.basicSalary) || 0,
-      profileImage: form.profileImage || null,
-      panImage: form.panImage || null,
-      aadhaarImage: form.aadhaarImage || null,
-    }))
-    setSaving(false)
+    try {
+      // Convert File objects to base64 data URLs, then send as plain JSON
+      const [profileImage, panImage, aadhaarImage] = await Promise.all([
+        form.profileImageFile ? toBase64(form.profileImageFile) : Promise.resolve(null),
+        form.panImageFile ? toBase64(form.panImageFile) : Promise.resolve(null),
+        form.aadhaarImageFile ? toBase64(form.aadhaarImageFile) : Promise.resolve(null),
+      ])
 
-    if (!res.error) {
-      dispatch(showToast({ message: 'Staff created!', type: 'success' }))
-      setOpen(false)
-      setForm(EMPTY)
-    } else {
-      dispatch(showToast({ message: res.payload || 'Failed to create staff', type: 'error' }))
+      const res = await dispatch(createStaff({
+        name: form.name,
+        phone: form.phone,
+        email: form.email,
+        role: form.role,
+        mongoMartId: form.mongoMartId || null,
+        basicSalary: parseFloat(form.basicSalary) || 0,
+        profileImage,
+        panImage,
+        aadhaarImage,
+      }))
+
+      if (!res.error) {
+        dispatch(showToast({ message: 'Staff created!', type: 'success' }))
+        handleClose()
+      } else {
+        dispatch(showToast({ message: res.payload || 'Failed to create staff', type: 'error' }))
+      }
+    } catch (err) {
+      dispatch(showToast({ message: err?.message || 'Failed', type: 'error' }))
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -128,15 +155,18 @@ export default function Staff() {
     },
     {
       key: 'is_active', label: 'Status',
-      render: r => <Badge variant={r.is_active ? 'green' : 'gray'}>
-        {r.is_active ? 'Active' : 'Inactive'}
-      </Badge>,
+      render: r => (
+        <Badge variant={r.is_active ? 'green' : 'gray'}>
+          {r.is_active ? 'Active' : 'Inactive'}
+        </Badge>
+      ),
     },
     {
       key: 'mongo_mart_id', label: 'Mart',
       render: r => {
-        if (!r.mongo_mart_id) return <span className="text-xs text-purple-600 font-medium">Super Admin</span>
-        const mart = marts.find(m => (m._id || m.id) === r.mongo_mart_id)
+        if (!r.mongo_mart_id)
+          return <span className="text-xs text-purple-600 font-medium">Super Admin</span>
+        const mart = marts.find(m => m.mongo_mart_id === r.mongo_mart_id)
         return <span className="text-xs text-gray-600">{mart?.name || '—'}</span>
       },
     },
@@ -188,7 +218,6 @@ export default function Staff() {
         action={<Button variant="primary" onClick={() => setOpen(true)}>+ Add Staff</Button>}
       />
 
-      {/* Mart filter */}
       <div className="flex gap-2 mb-4 flex-wrap">
         <button
           onClick={() => setMartFilter('')}
@@ -198,12 +227,14 @@ export default function Staff() {
           All ({staff.length})
         </button>
         {marts.map(m => {
-          const count = staff.filter(s => s.mongo_mart_id === (m._id || m.id)).length
+          const count = staff.filter(s => s.mongo_mart_id === m.mongo_mart_id).length
           return (
             <button
-              key={m._id || m.id}
-              onClick={() => setMartFilter(m._id || m.id)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${martFilter === (m._id || m.id) ? 'bg-primary-500 text-white' : 'bg-white border border-gray-200 text-gray-600'
+              key={m.mongo_mart_id}
+              onClick={() => setMartFilter(m.mongo_mart_id)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${martFilter === m.mongo_mart_id
+                  ? 'bg-primary-500 text-white'
+                  : 'bg-white border border-gray-200 text-gray-600'
                 }`}
             >
               {m.name} ({count})
@@ -219,25 +250,21 @@ export default function Staff() {
       <Modal
         title="Add Staff Member"
         open={open}
-        onClose={() => setOpen(false)}
+        onClose={handleClose}
         size="lg"
         footer={
           <>
-            <Button variant="secondary" onClick={() => { setOpen(false); setForm(EMPTY) }}>
-              Cancel
-            </Button>
+            <Button variant="secondary" onClick={handleClose}>Cancel</Button>
             <Button variant="primary" loading={saving} onClick={handleCreate}>
-              Add Staff
+              {saving ? 'Uploading & Saving...' : 'Add Staff'}
             </Button>
           </>
         }
       >
-        {/* Profile Image URL */}
-        <ImageInput
-          label="Profile Photo URL (optional)"
-          value={form.profileImage}
-          onChange={v => set('profileImage', v)}
-          placeholder="Paste GCS URL"
+        <ImageUpload
+          label="Profile Photo (optional)"
+          value={form.profileImageFile}
+          onChange={file => set('profileImageFile', file)}
         />
 
         <div className="form-grid-2">
@@ -279,30 +306,44 @@ export default function Staff() {
             onChange={e => set('mongoMartId', e.target.value)}
             disabled={form.role === 'super_admin'}
           >
-            <option value="">{form.role === 'super_admin' ? 'No mart (super admin)' : 'Select mart'}</option>
+            <option value="">
+              {form.role === 'super_admin' ? 'No mart (super admin)' : 'Select mart'}
+            </option>
             {marts.map(m => (
-              <option key={m._id || m.id} value={m._id || m.id}>{m.name}</option>
+              <option key={m.mongo_mart_id} value={m.mongo_mart_id}>{m.name}</option>
             ))}
           </Select>
         </div>
 
-        {/* Document URLs */}
         <div className="mt-4 p-4 bg-gray-50 rounded-lg space-y-3">
           <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
             KYC Documents (Optional)
           </p>
-          <ImageInput
-            label="PAN Card URL"
-            value={form.panImage}
-            onChange={v => set('panImage', v)}
-            placeholder="Paste PAN GCS URL"
-          />
-          <ImageInput
-            label="Aadhaar Card URL"
-            value={form.aadhaarImage}
-            onChange={v => set('aadhaarImage', v)}
-            placeholder="Paste Aadhaar GCS URL"
-          />
+          <div className="grid grid-cols-2 gap-4">
+            <div className={`p-3 rounded-lg border ${form.panImageFile ? 'border-primary-200 bg-primary-50' : 'border-red-200 bg-red-50'
+              }`}>
+              <ImageUpload
+                label="PAN Card *"
+                value={form.panImageFile}
+                onChange={file => set('panImageFile', file)}
+              />
+              {!form.panImageFile && (
+                <p className="text-xs text-red-500 mt-1">Required</p>
+              )}
+            </div>
+
+            <div className={`p-3 rounded-lg border ${form.aadhaarImageFile ? 'border-primary-200 bg-primary-50' : 'border-red-200 bg-red-50'
+              }`}>
+              <ImageUpload
+                label="Aadhaar Card *"
+                value={form.aadhaarImageFile}
+                onChange={file => set('aadhaarImageFile', file)}
+              />
+              {!form.aadhaarImageFile && (
+                <p className="text-xs text-red-500 mt-1">Required</p>
+              )}
+            </div>
+          </div>
         </div>
       </Modal>
     </div>

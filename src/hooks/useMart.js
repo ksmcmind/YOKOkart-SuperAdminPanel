@@ -9,13 +9,15 @@ import useAuth from './useAuth'
 export default function useMart() {
   const { martId: tokenMartId, isSuperAdmin } = useAuth()
   const marts = useSelector(selectAllMarts)
-
-  // Super admin picks a mart from dropdown
-  // Others use their assigned martId from token
   const [selectedMartId, setSelectedMartId] = useState('')
 
-  const activeMartId   = isSuperAdmin ? selectedMartId : tokenMartId
-  const activeMart     = marts.find(m => (m._id || m.id) === activeMartId)
+  // For super admin — selectedMartId is mongo_mart_id from dropdown
+  // For others — find their mart by matching tokenMartId against mart id or mongo_mart_id
+  const activeMartId = isSuperAdmin
+    ? selectedMartId
+    : marts.find(m => m.id === tokenMartId || m.mongo_mart_id === tokenMartId)?.mongo_mart_id || tokenMartId
+
+  const activeMart = marts.find(m => m.mongo_mart_id === activeMartId)
 
   return {
     activeMartId,
@@ -24,10 +26,9 @@ export default function useMart() {
     isSuperAdmin,
     selectedMartId,
     setSelectedMartId,
-    // Mart selector component props — only for super admin
     selectorProps: isSuperAdmin ? {
-      show:     true,
-      value:    selectedMartId,
+      show: true,
+      value: selectedMartId,
       onChange: setSelectedMartId,
       marts,
     } : { show: false },
