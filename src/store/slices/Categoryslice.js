@@ -42,10 +42,16 @@ export const deleteCategory = createAsyncThunk(
 // ── Subcategories ─────────────────────────────────────────────
 export const bulkUploadCategories = createAsyncThunk(
   'categories/bulkUpload',
-  async (rows, { rejectWithValue }) => {
-    const res = await api.post('/categories/bulk', { rows })
-    if (!res.success) return rejectWithValue(res.message)
-    return res.data
+  async (file, { rejectWithValue }) => {
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const res = await api.post('/products/bulk/upload?type=categories', formData)
+      if (!res.success) return rejectWithValue(res)
+      return res
+    } catch (err) {
+      return rejectWithValue({ message: err.message })
+    }
   }
 )
 

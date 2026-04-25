@@ -1,3 +1,4 @@
+// src/pages/Marts.jsx
 import { useEffect, useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import {
@@ -7,16 +8,14 @@ import {
 import { showToast } from '../store/slices/uiSlice'
 import PageHeader from '../components/PageHeader'
 import Button from '../components/Button'
-import Table from '../components/Table'
+import Grid from '../components/Grid'
 import Modal from '../components/Modal'
 import Badge from '../components/Badge'
 import Input, { Select } from '../components/Input'
 import ImageInput from '../components/Imageinput'
 
-// 1. ADDED pg_mart_id TO EMPTY STATE
 const EMPTY = {
-  pg_mart_id: '',
-  name: '', phone: '', email: '', address: '', pincode: '', city: 'Visakhapatnam',
+  pg_mart_id: '', name: '', phone: '', email: '', address: '', pincode: '', city: 'Visakhapatnam',
   lat: '', lng: '', serviceRadius: '5000', minOrderValue: '99',
   deliveryFee: '20', freeDeliveryAbove: '299', openingTime: '08:00',
   closingTime: '22:00', coveragePincodes: '', gstin: '', gstPercentage: '0',
@@ -32,38 +31,20 @@ export default function Marts() {
   const marts = useSelector(selectAllMarts)
   const loading = useSelector(selectMartsLoading)
 
-  const [addOpen, setAddOpen] = useState(false)
-  const [editOpen, setEditOpen] = useState(false)
+  const [modalOpen, setModalOpen] = useState(false)
   const [form, setForm] = useState(EMPTY)
-  const [editMart, setEditMart] = useState(null)
+  const [editingMart, setEditingMart] = useState(null)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => { dispatch(fetchMarts()) }, [dispatch])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
-  const addBannerRow = () => {
-    set('banners', [...(form.banners || []), {
-      image_url: '', action_type: 'category', action_value: '', is_active: true
-    }])
-  }
-
-  const updateBanner = (idx, field, val) => {
-    const updated = [...form.banners]
-    updated[idx] = { ...updated[idx], [field]: val }
-    set('banners', updated)
-  }
-
-  const removeBanner = (idx) => {
-    set('banners', form.banners.filter((_, i) => i !== idx))
-  }
-
-  const openEdit = (mart) => {
-    setEditMart(mart);
+  const handleOpenEdit = (mart) => {
+    setEditingMart(mart)
     setForm({
       ...EMPTY,
-      // 2. EXPLICITLY MAP pg_mart_id FROM DATA
-      pg_mart_id: mart.pg_mart_id || mart.name || '',
+      pg_mart_id: mart.pg_mart_id || '',
       name: mart.name || '',
       phone: mart.phone || '',
       email: mart.email || '',
@@ -75,7 +56,6 @@ export default function Marts() {
       banner: mart.banner || '',
       banners: mart.banners || [],
       operational_notice: mart.operational_notice || '',
-
       lat: String(mart.lat ?? ''),
       lng: String(mart.lng ?? ''),
       serviceRadius: String(mart.service_radius || 5000),
@@ -83,172 +63,160 @@ export default function Marts() {
       deliveryFee: String(mart.delivery_fee || 20),
       freeDeliveryAbove: String(mart.free_delivery_above || 299),
       gstPercentage: String(mart.gst_percentage || 0),
-
       openingTime: mart.opening_time?.slice(0, 5) || '08:00',
       closingTime: mart.closing_time?.slice(0, 5) || '22:00',
-      coveragePincodes: Array.isArray(mart.coverage_pincodes)
-        ? mart.coverage_pincodes.join(', ')
-        : '',
-    });
-    setEditOpen(true);
-  };
+      coveragePincodes: Array.isArray(mart.coverage_pincodes) ? mart.coverage_pincodes.join(', ') : '',
+    })
+    setModalOpen(true)
+  }
 
-  const buildPayload = () => {
-    return {
-      // 3. ENSURE ID IS IN PAYLOAD
-      pg_mart_id: form.pg_mart_id,
-      name: form.name,
-      phone: form.phone,
-      email: form.email,
-      address: form.address,
-      city: form.city,
-      pincode: form.pincode,
+  const handleSave = async () => {
+    if (!form.name || !form.phone || !form.pg_mart_id || !form.lat || !form.lng) {
+      dispatch(showToast({ message: 'Mart ID, Name, Phone, and Coordinates are required', type: 'error' })); return
+    }
+    setSaving(true)
+    const payload = {
+      ...form,
       lat: parseFloat(form.lat),
       lng: parseFloat(form.lng),
-
       service_radius: parseInt(form.serviceRadius) || 5000,
       min_order_value: parseFloat(form.minOrderValue) || 99,
       delivery_fee: parseFloat(form.deliveryFee) || 20,
       free_delivery_above: parseFloat(form.free_delivery_above) || 299,
-      opening_time: form.openingTime,
-      closing_time: form.closingTime,
-      coverage_pincodes: form.coveragePincodes ? form.coveragePincodes.split(',').map(s => s.trim()).filter(Boolean) : [],
-
       gst_percentage: parseFloat(form.gstPercentage) || 0,
-      gstin: form.gstin,
-      logo: form.logo,
-      banner: form.banner,
-      banners: form.banners,
-      operational_notice: form.operational_notice
-    };
-  };
-
-  const handleCreate = async () => {
-    // 4. ADDED pg_mart_id TO VALIDATION CHECK
-    if (!form.name || !form.phone || !form.lat || !form.lng || !form.pg_mart_id) {
-      dispatch(showToast({ message: 'Required fields (including Mart ID) missing', type: 'error' }))
-      return
+      coverage_pincodes: form.coveragePincodes ? form.coveragePincodes.split(',').map(s => s.trim()).filter(Boolean) : [],
     }
-    setSaving(true)
-    const res = await dispatch(createMart(buildPayload()))
+    const action = editingMart ? updateMart({ id: editingMart.id, data: payload }) : createMart(payload)
+    const res = await dispatch(action)
     setSaving(false)
-    if (!res.error) {
-      dispatch(showToast({ message: 'Mart created!', type: 'success' }))
-      setAddOpen(false); setForm(EMPTY)
-    }
+    if (!res.error) setModalOpen(false)
   }
 
-  const handleEdit = async () => {
-    setSaving(true)
-    const res = await dispatch(updateMart({ id: editMart.id, data: buildPayload() }))
-    setSaving(false)
-    if (!res.error) {
-      dispatch(showToast({ message: 'Mart updated!', type: 'success' }))
-      setEditOpen(false); setEditMart(null)
-    }
+  const addBanner = () => set('banners', [...(form.banners || []), { image_url: '', action_type: 'category', action_value: '', is_active: true }])
+  const removeBanner = (idx) => set('banners', form.banners.filter((_, i) => i !== idx))
+  const updateBanner = (idx, field, val) => {
+    const next = [...form.banners]; next[idx] = { ...next[idx], [field]: val }; set('banners', next)
   }
 
-  const renderFormFields = (
-    <div className="space-y-8 py-4">
-      <section>
-        <h4 className="text-xs font-bold text-primary-600 uppercase tracking-widest mb-4">Basic Information</h4>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* 5. ADDED INPUT FOR pg_mart_id */}
-          <Input label="Mart ID" required value={form.pg_mart_id} onChange={e => set('pg_mart_id', e.target.value)} />
-          <Input label="Mart Name" required value={form.name} onChange={e => set('name', e.target.value)} />
-          <Input label="Phone" required value={form.phone} onChange={e => set('phone', e.target.value)} />
-          <Input label="Email" type="email" value={form.email} onChange={e => set('email', e.target.value)} />
-          <Input label="Address" value={form.address} onChange={e => set('address', e.target.value)} />
-          <Input label="City" value={form.city} onChange={e => set('city', e.target.value)} />
-          <Input label="Pincode" value={form.pincode} onChange={e => set('pincode', e.target.value)} />
-          <Input label="Latitude" required type="number" value={form.lat} onChange={e => set('lat', e.target.value)} />
-          <Input label="Longitude" required type="number" value={form.lng} onChange={e => set('lng', e.target.value)} />
-        </div>
-      </section>
-
-      <section className="bg-gray-50 p-4 rounded-xl border border-gray-100">
-        <h4 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-4">Media & Branding</h4>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <ImageInput label="Store Logo" value={form.logo} onChange={v => set('logo', v)} />
-          <ImageInput label="Hero Banner" value={form.banner} onChange={v => set('banner', v)} />
-        </div>
-        <div className="mt-6">
-          <div className="flex justify-between items-center mb-3">
-            <label className="label mb-0">Carousel Banners</label>
-            <Button variant="secondary" size="sm" onClick={addBannerRow}>+ Add Slide</Button>
-          </div>
-          <div className="space-y-3">
-            {form.banners?.map((b, idx) => (
-              <div key={idx} className="flex flex-col md:flex-row gap-3 p-3 bg-white border border-gray-200 rounded-lg">
-                <div className="flex-1">
-                  <ImageInput placeholder="Banner URL" value={b.image_url} onChange={v => updateBanner(idx, 'image_url', v)} />
-                </div>
-                <div className="w-full md:w-32">
-                  <Select label="Type" value={b.action_type} onChange={e => updateBanner(idx, 'action_type', e.target.value)}>
-                    <option value="category">Category</option>
-                    <option value="product">Product</option>
-                    <option value="external">External</option>
-                  </Select>
-                </div>
-                <div className="flex-1">
-                  <Input label="Value" value={b.action_value} onChange={e => updateBanner(idx, 'action_value', e.target.value)} />
-                </div>
-                <button onClick={() => removeBanner(idx)} className="self-center text-red-400 hover:text-red-600 font-bold px-2">×</button>
-              </div>
-            ))}
+  const columns = [
+    {
+      key: 'name', label: 'Mart', render: r => (
+        <div className="flex items-center gap-3 py-1">
+          <img src={r.logo || '/placeholder.png'} className="w-10 h-10 rounded-lg object-cover shadow-sm" alt="" />
+          <div>
+            <p className="font-bold text-gray-900 leading-tight">{r.name}</p>
+            <p className="text-[10px] text-gray-500">{r.address}</p>
           </div>
         </div>
-      </section>
-
-      <section>
-        <h4 className="text-xs font-bold text-orange-600 uppercase tracking-widest mb-4">Operations</h4>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Input label="Radius (m)" type="number" value={form.serviceRadius} onChange={e => set('serviceRadius', e.target.value)} />
-          <Input label="Min Order (₹)" type="number" value={form.minOrderValue} onChange={e => set('minOrderValue', e.target.value)} />
-          <Input label="Delivery Fee (₹)" type="number" value={form.deliveryFee} onChange={e => set('deliveryFee', e.target.value)} />
-          <Input label="Opening" type="time" value={form.openingTime} onChange={e => set('openingTime', e.target.value)} />
-          <Input label="Closing" type="time" value={form.closingTime} onChange={e => set('closingTime', e.target.value)} />
-          <Input label="GST %" type="number" value={form.gstPercentage} onChange={e => set('gstPercentage', e.target.value)} />
+      )
+    },
+    {
+      key: 'contact', label: 'Contact', render: r => (
+        <div className="text-[10px] leading-tight">
+          <p className="font-bold text-gray-700">{r.phone}</p>
+          <p className="text-gray-400">{r.email || '—'}</p>
         </div>
-        <div className="mt-4">
-          <Input label="Coverage Pincodes" value={form.coveragePincodes} onChange={e => set('coveragePincodes', e.target.value)} />
-          <Input label="Operational Notice" value={form.operational_notice} onChange={e => set('operational_notice', e.target.value)} />
+      )
+    },
+    {
+      key: 'location', label: 'Location', render: r => (
+        <div className="text-[10px] leading-tight text-gray-500 font-medium uppercase tracking-tighter">
+          <p>{r.city}</p>
+          <p>{r.pincode}</p>
         </div>
-      </section>
-    </div>
-  );
+      )
+    },
+    { key: 'status', label: 'Status', render: r => <Badge variant={statusVariant(r.status)} size="sm">{r.status}</Badge> },
+    {
+      key: 'actions', label: '', render: r => (
+        <div className="flex gap-2">
+          <Button variant="secondary" size="sm" onClick={() => handleOpenEdit(r)}>Edit</Button>
+          <Button variant={r.status === 'open' ? 'warning' : 'primary'} size="sm" onClick={() => dispatch(toggleMartStatus(r.id))}>
+            {r.status === 'open' ? 'Close' : 'Open'}
+          </Button>
+        </div>
+      )
+    }
+  ]
 
   return (
     <div>
-      <PageHeader title="Marts" subtitle="Manage dark stores"
-        action={<Button variant="primary" onClick={() => { setForm(EMPTY); setAddOpen(true) }}>+ Add Mart</Button>}
+      <PageHeader title="Marts" subtitle="Manage dark store infrastructure"
+        action={<Button variant="primary" onClick={() => { setForm(EMPTY); setEditingMart(null); setModalOpen(true) }}>+ Add New Mart</Button>}
       />
-      <div className="card">
-        <Table columns={[
-          { key: 'name', label: 'Mart', render: r => <div><p className="font-medium">{r.name}</p><p className="text-xs text-gray-400">{r.address}</p></div> },
-          { key: 'pincode', label: 'Pincode' },
-          { key: 'status', label: 'Status', render: r => <Badge variant={statusVariant(r.status)}>{r.status}</Badge> },
-          {
-            key: 'actions', label: 'Actions', render: r => (
-              <div className="flex gap-2">
-                <Button variant="secondary" size="sm" onClick={() => openEdit(r)}>Edit</Button>
-                <Button variant={r.status === 'open' ? 'warning' : 'primary'} size="sm" onClick={() => dispatch(toggleMartStatus(r.id))}>
-                  {r.status === 'open' ? 'Close' : 'Open'}
-                </Button>
+      
+      <Grid columns={columns} data={marts} loading={loading} searchKey="name" />
+
+      <Modal title={editingMart ? `Configure: ${editingMart.name}` : "Create New Mart"} open={modalOpen} onClose={() => setModalOpen(false)} size="lg"
+        footer={<><Button variant="secondary" onClick={() => setModalOpen(false)}>Cancel</Button><Button variant="primary" loading={saving} onClick={handleSave}>Save Mart Configuration</Button></>}>
+        <div className="space-y-8">
+          <section>
+            <h4 className="text-xs font-bold text-primary-600 uppercase tracking-widest mb-4">Identity & Contact</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Input label="Mart ID *" placeholder="e.g. MART-01" value={form.pg_mart_id} onChange={e => set('pg_mart_id', e.target.value)} />
+              <Input label="Mart Name *" placeholder="e.g. Gajuwaka Mart" value={form.name} onChange={e => set('name', e.target.value)} />
+              <Input label="Phone *" placeholder="Contact number" value={form.phone} onChange={e => set('phone', e.target.value)} />
+              <Input label="Email Address" placeholder="mart@example.com" value={form.email} onChange={e => set('email', e.target.value)} />
+            </div>
+          </section>
+
+          <section>
+            <h4 className="text-xs font-bold text-primary-600 uppercase tracking-widest mb-4">Location & Logistics</h4>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="md:col-span-2">
+                <Input label="Full Address *" placeholder="Street, Landmark" value={form.address} onChange={e => set('address', e.target.value)} />
               </div>
-            )
-          }
-        ]} data={marts} loading={loading} />
-      </div>
+              <Input label="Pincode *" placeholder="6 digits" value={form.pincode} onChange={e => set('pincode', e.target.value)} />
+              <Input label="City" value={form.city} onChange={e => set('city', e.target.value)} />
+              <Input label="Latitude *" type="number" placeholder="17.xxx" value={form.lat} onChange={e => set('lat', e.target.value)} />
+              <Input label="Longitude *" type="number" placeholder="83.xxx" value={form.lng} onChange={e => set('lng', e.target.value)} />
+            </div>
+            <div className="mt-4">
+              <Input label="Service Radius (meters)" type="number" value={form.serviceRadius} onChange={e => set('serviceRadius', e.target.value)} />
+              <Input label="Coverage Pincodes" placeholder="Comma separated: 530001, 530002" value={form.coveragePincodes} onChange={e => set('coveragePincodes', e.target.value)} />
+            </div>
+          </section>
 
-      <Modal title="Add Mart" open={addOpen} onClose={() => setAddOpen(false)} size="lg"
-        footer={<><Button onClick={() => setAddOpen(false)}>Cancel</Button><Button variant="primary" loading={saving} onClick={handleCreate}>Create</Button></>}>
-        {renderFormFields}
-      </Modal>
+          <section className="bg-gray-50 p-6 rounded-2xl border border-gray-100">
+            <h4 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-4">Branding & Media</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <ImageInput label="Mart Logo" value={form.logo} onChange={v => set('logo', v)} />
+              <ImageInput label="Hero Banner" value={form.banner} onChange={v => set('banner', v)} />
+            </div>
+            <div className="mt-8">
+              <div className="flex justify-between items-center mb-4">
+                <label className="text-sm font-bold text-gray-700">Carousel Banners</label>
+                <Button variant="secondary" size="sm" onClick={addBanner}>+ Add Slide</Button>
+              </div>
+              <div className="space-y-4">
+                {form.banners?.map((b, idx) => (
+                  <div key={idx} className="flex flex-col md:flex-row gap-3 p-4 bg-white border border-gray-200 rounded-xl shadow-sm">
+                    <div className="flex-1"><ImageInput placeholder="Banner URL" value={b.image_url} onChange={v => updateBanner(idx, 'image_url', v)} /></div>
+                    <div className="w-full md:w-32"><Select label="Action" value={b.action_type} onChange={e => updateBanner(idx, 'action_type', e.target.value)}><option value="category">Category</option><option value="product">Product</option><option value="external">External</option></Select></div>
+                    <div className="flex-1"><Input label="Value" placeholder="Slug or URL" value={b.action_value} onChange={e => updateBanner(idx, 'action_value', e.target.value)} /></div>
+                    <button onClick={() => removeBanner(idx)} className="self-center text-red-500 hover:text-red-700 font-bold px-2 text-xl">×</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
 
-      <Modal title={`Edit ${editMart?.name}`} open={editOpen} onClose={() => setEditOpen(false)} size="lg"
-        footer={<><Button onClick={() => setEditOpen(false)}>Cancel</Button><Button variant="primary" loading={saving} onClick={handleEdit}>Save</Button></>}>
-        {renderFormFields}
+          <section>
+            <h4 className="text-xs font-bold text-orange-600 uppercase tracking-widest mb-4">Financials & Hours</h4>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Input label="Min Order Value (₹)" type="number" value={form.minOrderValue} onChange={e => set('minOrderValue', e.target.value)} />
+              <Input label="Delivery Fee (₹)" type="number" value={form.deliveryFee} onChange={e => set('deliveryFee', e.target.value)} />
+              <Input label="Free Delivery Above (₹)" type="number" value={form.freeDeliveryAbove} onChange={e => set('freeDeliveryAbove', e.target.value)} />
+              <Input label="Opening Time" type="time" value={form.openingTime} onChange={e => set('openingTime', e.target.value)} />
+              <Input label="Closing Time" type="time" value={form.closingTime} onChange={e => set('closingTime', e.target.value)} />
+              <Input label="GST Percentage (%)" type="number" value={form.gstPercentage} onChange={e => set('gstPercentage', e.target.value)} />
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+              <Input label="GSTIN" placeholder="GST Registration Number" value={form.gstin} onChange={e => set('gstin', e.target.value)} />
+              <Input label="Operational Notice" placeholder="e.g. Closed for maintenance" value={form.operational_notice} onChange={e => set('operational_notice', e.target.value)} />
+            </div>
+          </section>
+        </div>
       </Modal>
     </div>
   )

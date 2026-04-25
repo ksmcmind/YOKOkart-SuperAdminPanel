@@ -9,9 +9,10 @@ const request = async (method, path, body = null) => {
 
     const options = {
         method,
+        credentials: 'include', // Include cookies in cross-origin requests
         headers: {
             ...(!isFormData && { 'Content-Type': 'application/json' }),
-            'Authorization': `Bearer ${getToken()}`,
+            'X-Client-Type': 'web', // Tell backend to use cookies
         },
     }
 

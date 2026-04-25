@@ -9,6 +9,14 @@ export const fetchMarts = createAsyncThunk(
     const res = await api.get('/marts')
     if (!res.success) return rejectWithValue(res.message)
     return res.data
+  },
+  {
+    condition: (_, { getState }) => {
+      const { mart } = getState()
+      if (mart.list.length > 0 && !mart.loading) {
+        return false // Already have data, skip redundant call
+      }
+    }
   }
 )
 
