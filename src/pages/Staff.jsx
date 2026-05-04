@@ -28,7 +28,7 @@ const ROLES = [
 
 const EMPTY = {
   name: '', phone: '', email: '', role: 'mart_admin',
-  mongoMartId: '', basicSalary: '',
+  martId: '', basicSalary: '',
   profileImageFile: null, panImageFile: null, aadhaarImageFile: null,
 }
 
@@ -62,7 +62,7 @@ export default function Staff() {
     if (!form.name || !form.phone) {
       dispatch(showToast({ message: 'Name and phone required', type: 'error' })); return
     }
-    if (form.role !== 'super_admin' && !form.mongoMartId) {
+    if (form.role !== 'super_admin' && !form.martId) {
       dispatch(showToast({ message: 'Mart required for this role', type: 'error' })); return
     }
 
@@ -79,7 +79,7 @@ export default function Staff() {
         phone: form.phone,
         email: form.email,
         role: form.role,
-        mongoMartId: form.mongoMartId || null,
+        martId: form.martId || null,
         basicSalary: parseFloat(form.basicSalary) || 0,
         profileImage, panImage, aadhaarImage,
       }))
@@ -159,7 +159,7 @@ export default function Staff() {
       />
 
       <Modal open={open} onClose={() => setOpen(false)} title="Add Staff Member" size="lg"
-             footer={<><Button variant="secondary" onClick={() => setOpen(false)}>Cancel</Button><Button variant="primary" loading={saving} onClick={handleCreate}>Create Staff Member</Button></>}>
+        footer={<><Button variant="secondary" onClick={() => setOpen(false)}>Cancel</Button><Button variant="primary" loading={saving} onClick={handleCreate}>Create Staff Member</Button></>}>
         <div className="space-y-6">
           <section>
             <h4 className="text-xs font-bold text-primary-600 uppercase tracking-widest mb-4">Identity</h4>
@@ -180,9 +180,9 @@ export default function Staff() {
               <Select label="System Role *" value={form.role} onChange={e => set('role', e.target.value)}>
                 {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
               </Select>
-              <Select label="Assign to Mart *" value={form.mongoMartId} onChange={e => set('mongoMartId', e.target.value)}>
+              <Select label="Assign to Mart *" value={form.martId} onChange={e => set('martId', e.target.value)}>
                 <option value="">Select Mart</option>
-                {marts.map(m => <option key={m.mongo_mart_id} value={m.mongo_mart_id}>{m.name}</option>)}
+                {marts.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
               </Select>
             </div>
           </section>

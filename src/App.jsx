@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { io } from 'socket.io-client'
@@ -27,24 +27,43 @@ export default function App() {
   const isLoggedIn = useSelector(selectIsLoggedIn)
   const isInitialized = useSelector(selectIsInitialized)
 
+  // Run getMe exactly once on cold mount.
+  // useRef prevents StrictMode double-invoke from firing two API calls.
+  const getMeCalled = useRef(false)
   useEffect(() => {
+    if (getMeCalled.current) return
+    getMeCalled.current = true
     dispatch(getMe())
   }, [dispatch])
 
+  // Socket — use ref to avoid re-renders on connect/disconnect
+  const socketRef = useRef(null)
   useEffect(() => {
-    if (!isLoggedIn || !isInitialized) return
+    if (!isLoggedIn || !isInitialized) {
+      // Disconnect existing socket when logged out
+      if (socketRef.current) {
+        socketRef.current.disconnect()
+        socketRef.current = null
+      }
+      return
+    }
+
+    if (socketRef.current) return // already connected
 
     const SOCKET_URL = import.meta.env.VITE_API_URL?.replace('/api', '') || 'http://localhost:3000'
-    const socket = io(SOCKET_URL, {
+    socketRef.current = io(SOCKET_URL, {
       auth: { token: 'token_in_cookie' },
       transports: ['websocket']
     })
 
-    socket.on('bulk_job_update', (data) => {
+    socketRef.current.on('bulk_job_update', (data) => {
       alert(`📢 Bulk Upload Update:\n${data.message}`)
     })
 
-    return () => socket.disconnect()
+    return () => {
+      socketRef.current?.disconnect()
+      socketRef.current = null
+    }
   }, [isLoggedIn, isInitialized])
 
   if (!isInitialized) {

@@ -23,7 +23,9 @@ const request = async (method, path, body = null) => {
 
     if (res.status === 401) {
         localStorage.clear()
-        window.location.href = '/'
+        if (path !== '/auth/me' && window.location.pathname !== '/login') {
+            window.location.href = '/login'
+        }
     }
 
     return data

@@ -3,6 +3,7 @@ import { NavLink } from 'react-router-dom'
 import { useDispatch, useSelector } from 'react-redux'
 import { logout } from '../store/slices/authSlice'
 import { selectUser } from '../store/slices/authSlice'
+import BulkJobNotifications from './BulkJobNotifications'
 
 const NAV = [
     { to: '/', label: 'Dashboard', icon: '📊' },
@@ -33,13 +34,16 @@ export default function Sidebar() {
                         </div>
                     </div>
                 )}
-                <button
-                    onClick={() => setCollapsed(!collapsed)}
-                    className={`p-2 rounded-lg hover:bg-gray-50 text-gray-400 transition-colors ${collapsed ? 'mx-auto' : ''}`}
-                    title={collapsed ? "Expand Sidebar" : "Collapse Sidebar"}
-                >
-                    {collapsed ? '➡️' : '⬅️'}
-                </button>
+                <div className="flex items-center gap-1">
+                    <BulkJobNotifications />
+                    <button
+                        onClick={() => setCollapsed(!collapsed)}
+                        className={`p-2 rounded-lg hover:bg-gray-50 text-gray-400 transition-colors ${collapsed ? 'mx-auto' : ''}`}
+                        title={collapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+                    >
+                        {collapsed ? '➡️' : '⬅️'}
+                    </button>
+                </div>
             </div>
 
             {/* Navigation */}

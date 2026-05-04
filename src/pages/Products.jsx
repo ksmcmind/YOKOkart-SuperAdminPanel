@@ -1,5 +1,5 @@
 // src/pages/Products.jsx
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import * as XLSX from 'xlsx'
 import {
@@ -11,7 +11,9 @@ import {
   selectAllProducts,
   selectProductLoading,
   selectProductSaving,
+  selectProductError,
   selectFilteredProducts,
+  clearProductError,
 } from '../store/slices/productSlice'
 import { fetchCategories, selectAllCategories } from '../store/slices/categorySlice'
 import { showToast } from '../store/slices/uiSlice'
@@ -112,7 +114,7 @@ function VariantEditor({ variants, onChange, isEdit }) {
             {variants.length > 1 && (
               <button onClick={() => remove(i)} className="absolute top-4 right-4 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all">✕</button>
             )}
-            
+
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <Input label="Variant ID *" value={v.variant_id} onChange={e => update(i, 'variant_id', e.target.value)} disabled={isEdit} />
               <Input label="Variant Name *" placeholder="e.g. 500g Pack" value={v.variant_name} onChange={e => update(i, 'variant_name', e.target.value)} />
@@ -143,7 +145,7 @@ function VariantEditor({ variants, onChange, isEdit }) {
 
 export default function Products() {
   const dispatch = useDispatch()
-  const { isSuperAdmin } = useAuth()
+  const { user, isSuperAdmin } = useAuth()
   const categories = useSelector(selectAllCategories)
   const loading = useSelector(selectProductLoading)
   const saving = useSelector(selectProductSaving)
@@ -158,18 +160,41 @@ export default function Products() {
 
   const filtered = useSelector(s => selectFilteredProducts(s, search))
 
-  useEffect(() => { 
-    if (categories.length === 0) dispatch(fetchCategories()) 
+  const productError = useSelector(selectProductError)
+
+  // Fetch categories once
+  useEffect(() => {
+    if (categories.length === 0) dispatch(fetchCategories())
   }, [dispatch, categories.length])
 
-  useEffect(() => { 
-    dispatch(fetchProducts({ 
-      categorySlug, 
-      subcategorySlug, 
-      search: search.length >= 3 ? search : '',
-      code: search
-    })) 
-  }, [categorySlug, subcategorySlug, search, dispatch])
+  // Debounced fetch — prevents hammering the API on every keystroke or StrictMode double-invoke.
+  // If the last request failed (e.g. rate limit), stop retrying automatically.
+  // Error is cleared when the user actively changes a filter so they can try again.
+  const fetchTimerRef = useRef(null)
+  const lastFetchKeyRef = useRef(null)
+
+  useEffect(() => {
+    const key = `${categorySlug}|${subcategorySlug}|${search}`
+    if (lastFetchKeyRef.current === key) return  // same params — skip
+    if (productError) {                          // failed — don't auto-retry
+      // Clear error only when the user actively changed something (key changed)
+      dispatch(clearProductError())
+      return
+    }
+
+    clearTimeout(fetchTimerRef.current)
+    fetchTimerRef.current = setTimeout(() => {
+      lastFetchKeyRef.current = key
+      dispatch(fetchProducts({
+        categorySlug,
+        subcategorySlug,
+        search: search.length >= 3 ? search : '',
+        code: search
+      }))
+    }, search ? 400 : 0)
+
+    return () => clearTimeout(fetchTimerRef.current)
+  }, [categorySlug, subcategorySlug, search, dispatch, productError])
 
   const handleEdit = (product) => {
     setForm({
@@ -234,12 +259,14 @@ export default function Products() {
     },
     { key: 'productId', label: 'Product ID', render: r => <span className="text-[11px] font-mono font-bold bg-gray-50 px-2 py-1 rounded border border-gray-100 text-gray-700">{r.productId || '—'}</span> },
     { key: 'category', label: 'Category', render: r => <span className="text-[10px] text-gray-500 font-bold uppercase tracking-tight">{r.categorySlug} › {r.subcategorySlug || '—'}</span> },
-    { key: 'tax', label: 'Taxation', render: r => (
-      <div className="text-[10px] leading-tight">
-        <p className="font-bold text-gray-700">HSN: {r.hsnCode || '—'}</p>
-        <p className="text-primary-600 font-bold">{r.gstPercentage}% GST</p>
-      </div>
-    )},
+    {
+      key: 'tax', label: 'Taxation', render: r => (
+        <div className="text-[10px] leading-tight">
+          <p className="font-bold text-gray-700">HSN: {r.hsnCode || '—'}</p>
+          <p className="text-primary-600 font-bold">{r.gstPercentage}% GST</p>
+        </div>
+      )
+    },
     { key: 'status', label: 'Status', render: r => <Badge variant={r.isActive ? 'green' : 'red'} size="sm">{r.isActive ? 'Active' : 'Inactive'}</Badge> },
     {
       key: 'actions', label: '', render: r => (
@@ -312,7 +339,7 @@ export default function Products() {
       <PageHeader
         title="Products"
         subtitle="Manage global product catalog"
-        action={isSuperAdmin && (
+        action={(isSuperAdmin || user?.role === 'admin') && (
           <div className="flex gap-2">
             <Button variant="secondary" onClick={() => setBulkOpen(true)}>Bulk Upload</Button>
             <Button variant="primary" onClick={() => { setForm(EMPTY_FORM); setIsEdit(false); setAddOpen(true) }}>+ Add Product</Button>
@@ -345,10 +372,10 @@ export default function Products() {
         }
       />
 
-      <Modal 
-        open={addOpen} 
-        onClose={() => { setAddOpen(false); setIsEdit(false) }} 
-        title={isEdit ? 'Edit Product' : 'Create New Product'} 
+      <Modal
+        open={addOpen}
+        onClose={() => { setAddOpen(false); setIsEdit(false) }}
+        title={isEdit ? 'Edit Product' : 'Create New Product'}
         size="xl"
         footer={<><Button variant="secondary" onClick={() => { setAddOpen(false); setIsEdit(false) }}>Cancel</Button><Button variant="primary" loading={saving} onClick={handleSave}>{isEdit ? 'Update' : 'Create Product'}</Button></>}
       >
@@ -426,7 +453,7 @@ export default function Products() {
         open={bulkOpen} onClose={() => setBulkOpen(false)} title="Bulk Upload Products"
         schemaFields={SCHEMA_FIELDS} fieldValidators={FIELD_VALIDATORS}
         onUpload={async (items, file) => {
-          const action = await dispatch(bulkUploadProducts(file)); 
+          const action = await dispatch(bulkUploadProducts(file));
           return action.payload;
         }}
         groupRows={groupRowsToProducts}

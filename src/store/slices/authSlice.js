@@ -94,9 +94,10 @@ const authSlice = createSlice({
       })
 
       .addCase(logout.fulfilled, (state) => {
-        state.user    = null
-        state.isLoggedIn = false
-        state.otpSent = false
+        state.user         = null
+        state.isLoggedIn   = false
+        state.otpSent      = false
+        state.isInitialized = false  // reset so loader shows cleanly on next mount
       })
   },
 })

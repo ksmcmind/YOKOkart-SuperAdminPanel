@@ -24,13 +24,8 @@ export default function Dashboard() {
     if (!activeMartId && !isSuperAdmin) return
     const fetchOrders = async () => {
       if (isSuperAdmin && !activeMartId) {
-        // Fetch from all marts
-        const all = []
-        for (const mart of marts) {
-          const res = await api.get(`/orders/mart?martId=${mart._id || mart.id}`)
-          if (res.success) all.push(...(res.data || []))
-        }
-        setOrders(all)
+        // Fetch from all marts disabled to prevent overwhelming APIs on page load
+        setOrders([])
       } else if (activeMartId) {
         const res = await api.get(`/orders/mart?martId=${activeMartId}`)
         if (res.success) setOrders(res.data || [])
