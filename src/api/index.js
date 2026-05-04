@@ -1,6 +1,8 @@
 // src/api/index.js
 // Change BASE_URL if backend runs on different port
-const BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api'
+const BASE_URL = 'http://localhost:3000/api'
+
+// import.meta.env.VITE_API_URL ||
 
 export const getToken = () => localStorage.getItem('ksmcm_token') || ''
 
