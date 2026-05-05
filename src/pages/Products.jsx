@@ -155,7 +155,7 @@ function FilterBar({ draft, setDraft, onSearch, onReset, categories, loading }) 
           <input
             type="text"
             placeholder="Search products by name, code, brand..."
-            className="w-full pl-9 pr-4 py-2 bg-gray-50 border-none rounded-lg text-sm focus:ring-2 focus:ring-primary-500 transition-all"
+            className="w-full pl-9 pr-4 py-2 bg-gray-50 border-none rounded-lg text-sm focus:ring-0 focus:outline-none transition-all"
             value={draft.search}
             onChange={e => { set('search', e.target.value); setShowSuggest(true) }}
             onKeyDown={e => {

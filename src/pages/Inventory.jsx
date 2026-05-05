@@ -240,7 +240,7 @@ function FilterBar({ committedFilters, onSearch, onReset, loading }) {
                         onChange={e => set('search', e.target.value)}
                         onKeyDown={onEnter}
                         placeholder="Search product, variant, batch, aisle…"
-                        className="w-full text-xs pl-8 pr-3 py-2.5 border border-gray-200 rounded-xl outline-none focus:border-primary-400 focus:ring-2 focus:ring-primary-100 transition-all bg-gray-50 focus:bg-white placeholder-gray-400"
+                        className="w-full text-xs pl-8 pr-3 py-2.5 border border-gray-200 rounded-xl focus:ring-0 focus:outline-none transition-all bg-gray-50 focus:bg-white placeholder-gray-400"
                     />
                 </div>
 

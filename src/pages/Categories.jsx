@@ -233,7 +233,11 @@ export default function Categories() {
 
   const filtered = useMemo(() => (Array.isArray(categories) ? categories : []).filter(c => {
     const q = search.toLowerCase()
-    return (!q || c.name?.toLowerCase().includes(q) || c.category_code?.toLowerCase().includes(q))
+    const subMatch = c.subcategories?.some(s => 
+      s.name?.toLowerCase().includes(q) || 
+      s.subcategory_code?.toLowerCase().includes(q)
+    )
+    return (!q || c.name?.toLowerCase().includes(q) || c.category_code?.toLowerCase().includes(q) || subMatch)
       && (typeFilter === 'all' || c.type === typeFilter)
   }), [categories, search, typeFilter])
 
@@ -300,6 +304,37 @@ export default function Categories() {
 
   const setCF = k => e => setCatForm(p => ({ ...p, [k]: e.target.value }))
 
+  // ── Local Autocomplete Logic ───────────────────────────────────────────
+  const [showSuggest, setShowSuggest] = useState(false)
+  const suggestRef = useRef(null)
+  
+  const suggestions = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (q.length < 2) return []
+    return (categories || [])
+      .filter(c => {
+        const subMatch = c.subcategories?.some(s => 
+          s.name?.toLowerCase().includes(q) || 
+          s.subcategory_code?.toLowerCase().includes(q)
+        )
+        return c.name?.toLowerCase().includes(q) || c.category_code?.toLowerCase().includes(q) || subMatch
+      })
+      .slice(0, 8)
+  }, [categories, search])
+
+  useEffect(() => {
+    const clickOut = (e) => {
+      if (suggestRef.current && !suggestRef.current.contains(e.target)) setShowSuggest(false)
+    }
+    document.addEventListener('mousedown', clickOut)
+    return () => document.removeEventListener('mousedown', clickOut)
+  }, [])
+
+  const handleSelect = (name) => {
+    setSearch(name)
+    setShowSuggest(false)
+  }
+
   return (
     <div className="p-4 sm:p-6 space-y-4">
       <PageHeader
@@ -316,30 +351,64 @@ export default function Categories() {
       {/* Polling banner — always visible when active */}
       <PollBanner status={pollStatus} onDismiss={() => setPollStatus(null)} />
 
-      {/* Filter bar */}
-      <div className="bg-white p-3 rounded-xl border border-gray-100 shadow-sm flex flex-col sm:flex-row gap-3 items-center justify-between">
-        <div className="relative w-full sm:w-80">
-          <input
-            type="text"
-            placeholder="Search by name or code..."
-            className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-primary-500 outline-none"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
-          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-            <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
-          </svg>
-        </div>
-        <div className="flex items-center gap-3 w-full sm:w-auto">
-          <select
-            className="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:border-primary-500 outline-none"
-            value={typeFilter} onChange={e => setTypeFilter(e.target.value)}
-          >
-            <option value="all">All types</option>
-            <option value="product">Products</option>
-            <option value="service">Services</option>
-          </select>
-          <p className="text-sm text-gray-400 whitespace-nowrap">{filtered.length} result{filtered.length !== 1 ? 's' : ''}</p>
+      {/* Filter Bar */}
+      <div className="bg-white rounded-xl border border-gray-100 shadow-sm transition-all">
+        <div className="p-3 flex flex-wrap gap-3 items-center">
+          <div className="relative flex-1 min-w-[240px]" ref={suggestRef}>
+            <input
+              type="text"
+              placeholder="Search by category name or code..."
+              className="w-full pl-9 pr-4 py-2 bg-gray-50 border-none rounded-lg text-sm focus:ring-0 focus:outline-none transition-all"
+              value={search}
+              onChange={e => { setSearch(e.target.value); setShowSuggest(true) }}
+              onFocus={() => setShowSuggest(true)}
+            />
+            <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+              <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+            </svg>
+
+            {/* Suggestions Dropdown */}
+            {showSuggest && search.length >= 2 && (
+              <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white border border-gray-100 rounded-xl shadow-xl overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150 max-h-60 overflow-y-auto">
+                {suggestions.length > 0 ? (
+                  suggestions.map((s, i) => (
+                    <button
+                      key={i}
+                      onClick={() => handleSelect(s.name)}
+                      className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-primary-50 border-b border-gray-50 last:border-none flex items-center justify-between transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        <svg className="w-3.5 h-3.5 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                        <span className="font-medium truncate">{s.name}</span>
+                      </div>
+                      <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{s.category_code}</span>
+                    </button>
+                  ))
+                ) : (
+                  <div className="px-4 py-3 text-xs text-gray-400 italic bg-gray-50/50">
+                    No categories found for "{search}"
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center gap-3">
+            <select
+              className="bg-gray-50 border-none rounded-lg px-3 py-2 text-sm focus:ring-0 focus:outline-none cursor-pointer font-medium text-gray-700"
+              value={typeFilter} onChange={e => setTypeFilter(e.target.value)}
+            >
+              <option value="all">All Types</option>
+              <option value="product">Products Only</option>
+              <option value="service">Services Only</option>
+            </select>
+            <div className="h-4 w-[1px] bg-gray-200 mx-1" />
+            <p className="text-sm font-medium text-gray-500 whitespace-nowrap">
+              <span className="text-primary-600">{filtered.length}</span> results
+            </p>
+          </div>
         </div>
       </div>
 
