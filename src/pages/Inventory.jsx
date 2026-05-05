@@ -45,12 +45,12 @@ import api from '../api/index'
 
 const UNITS = ['kg', 'g', 'l', 'ml', 'pcs', 'dozen']
 
-const USER_TXN_TYPES = ['restock', 'return', 'adjustment', 'damage', 'expired', 'theft']
+const USER_TXN_TYPES = ['restock', 'sale', 'return', 'damage', 'expired', 'theft', 'adjustment', 'transfer', 'opening_stock']
 
 const SCHEMA_FIELDS = [
     'product_id', 'variant_id', 'sale_price', 'mrp',
     'stock_qty', 'stock_unit', 'low_stock_alert',
-    'expiry_date', 'batch_number', 'aisle_location', 'is_active',
+    'expiry_date', 'batch_number', 'aisle_location', 'is_active', 'type'
 ]
 
 const FIELD_VALIDATORS = {
@@ -65,6 +65,8 @@ const FIELD_VALIDATORS = {
     batch_number: v => { if (!v || !v.trim()) return true; return v.length <= 50 || 'max 50 chars' },
     aisle_location: v => { if (!v || !v.trim()) return true; return v.length <= 50 || 'max 50 chars' },
     is_active: v => ['true', 'false'].includes((v || '').toLowerCase().trim()) || 'must be "true" or "false"',
+    type: v => USER_TXN_TYPES.includes((v || '').toLowerCase().trim()) || `must be one of: ${USER_TXN_TYPES.join(', ')}`,
+
 }
 
 // ── Template generators ───────────────────────────────────────────────────────
@@ -495,7 +497,7 @@ function RestockModal({ open, onClose, item, martId }) {
         }
         const action = await dispatch(restockInventoryItem({
             mongo_product_id: item.mongo_product_id,
-            martid: martId,
+            mongo_mart_id: martId,
             variant_id: item.variant_id,
             sale_price: parseFloat(item.sale_price),
             mrp: parseFloat(item.mrp),
@@ -507,6 +509,7 @@ function RestockModal({ open, onClose, item, martId }) {
             batch_number: item.batch_number || null,
             mode: form.mode,
             txn_type: form.txn_type,
+            type: item.type,
             reason: form.reason || null,
         }))
         if (restockInventoryItem.fulfilled.match(action)) onClose()
@@ -780,7 +783,7 @@ export default function Inventory() {
 
         const action = await dispatch(addInventoryItem({
             mongo_product_id: form.product_id, variant_id: form.variant_id,
-            martid: martId, mongo_staff_id: staffId,
+            mongo_mart_id: martId, mongo_staff_id: staffId,
             sale_price: parseFloat(form.sale_price), mrp: parseFloat(form.mrp),
             stock_qty: parseFloat(form.stock_qty), stock_unit: form.stock_unit,
             low_stock_alert: parseFloat(form.low_stock_alert), type: form.type,

@@ -14,6 +14,7 @@ const NAV = [
     { to: '/orders', label: 'Orders', icon: '📦' },
     { to: '/inventory', label: 'Inventory', icon: '📋' },
     { to: '/drivers', label: 'Drivers', icon: '🚴' },
+    { to: '/banners', label: 'Banners', icon: '🖼️' }
 ]
 
 export default function Sidebar() {

@@ -146,12 +146,12 @@ export default function BulkUploadModal({
     setHeaders(h); setRawRows(r)
     const { ok, headerErrors: hErr, rowErrors: rErr } = validateRows(h, r)
     setHeaderErrors(hErr); setRowErrors(rErr)
-    
-    if (hErr.missing.length) { 
+
+    if (hErr.missing.length) {
       console.warn('Missing Headers:', hErr.missing)
-      setStep('header-error'); 
-      setLoading(false); 
-      return 
+      setStep('header-error');
+      setLoading(false);
+      return
     }
 
     // Always move to preview if headers are OK (skipping frontend row validation block)
@@ -167,7 +167,7 @@ export default function BulkUploadModal({
       const name = f.name.toLowerCase()
       const isCSV = name.endsWith('.csv')
       const isXLSX = name.endsWith('.xlsx') || name.endsWith('.xls')
-      
+
       if (!isCSV && !isXLSX) {
         dispatch(showToast({ message: 'Only .csv or .xlsx files accepted', type: 'error' }))
         return
@@ -265,12 +265,11 @@ export default function BulkUploadModal({
       {step === 'upload' && (
         <div className="flex flex-col gap-4 py-6">
           <div
-            className={`border-2 border-dashed rounded-2xl py-16 flex flex-col items-center gap-4 transition-all duration-200 ${
-              loading ? 'bg-gray-50 border-gray-200 cursor-wait' : 'border-gray-200 bg-white hover:border-primary-400 hover:bg-primary-50 cursor-pointer'
-            }`}
+            className={`border-2 border-dashed rounded-2xl py-16 flex flex-col items-center gap-4 transition-all duration-200 ${loading ? 'bg-gray-50 border-gray-200 cursor-wait' : 'border-gray-200 bg-white hover:border-primary-400 hover:bg-primary-50 cursor-pointer'
+              }`}
             onClick={() => !loading && fileRef.current.click()}
             onDragOver={e => e.preventDefault()}
-            onDrop={e => { e.preventDefault(); if(!loading) handleFile(e.dataTransfer.files[0]) }}
+            onDrop={e => { e.preventDefault(); if (!loading) handleFile(e.dataTransfer.files[0]) }}
           >
             <div className={`w-16 h-16 rounded-full flex items-center justify-center text-3xl mb-2 ${loading ? 'bg-gray-100' : 'bg-primary-50'}`}>
               {loading ? '⏳' : '📂'}
@@ -337,9 +336,8 @@ export default function BulkUploadModal({
             <p className="text-xs font-semibold text-gray-500 mb-1">Your file's columns:</p>
             <div className="flex flex-wrap gap-1">
               {headers.map(col => (
-                <span key={col} className={`px-2 py-0.5 rounded text-xs font-mono ${
-                  schemaFields.includes(col) ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                }`}>{col}</span>
+                <span key={col} className={`px-2 py-0.5 rounded text-xs font-mono ${schemaFields.includes(col) ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                  }`}>{col}</span>
               ))}
             </div>
           </div>
@@ -398,7 +396,7 @@ export default function BulkUploadModal({
             </div>
             <button onClick={reset} className="text-xs text-gray-400 hover:text-red-500">✕ Change file</button>
           </div>
-          
+
           {PreviewComponent ? (
             <PreviewComponent payload={payload} rawRows={rawRows} />
           ) : (

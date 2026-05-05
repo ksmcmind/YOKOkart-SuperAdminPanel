@@ -35,11 +35,14 @@ export const fetchInventory = createAsyncThunk(
     async (martId, { rejectWithValue }) => {
         if (!martId) return rejectWithValue('No martId provided')
         try {
-            const res = await api.get(`/inventory?martid=${encodeURIComponent(martId)}`)
-
-            console.log("inventory data: ", res.data);
+            const res = await api.get(`/inventory?martId=${encodeURIComponent(martId)}`)
             if (!res.success) return rejectWithValue(res.message || 'Failed to load inventory')
-            return res.data || []
+            const rawData = res.data || (Array.isArray(res) ? res : [])
+            return rawData.map(item => ({
+                ...item,
+                id: item.id || item._id,
+                stock_qty: item.stock_qty ?? item.ck_qty ?? 0
+            }))
         } catch (err) {
             return rejectWithValue(err?.message || 'Network error')
         }
@@ -60,8 +63,14 @@ export const fetchInventoryFiltered = createAsyncThunk(
             // ← FIXED: /inventory/filters not /inventory
             const res = await api.get(`/inventory/filters?${params.toString()}`)
             if (!res.success) return rejectWithValue(res.message || 'Failed to load')
+            const rawData = res.data || (Array.isArray(res) ? res : [])
+            const items = rawData.map(item => ({
+                ...item,
+                id: item.id || item._id,
+                stock_qty: item.stock_qty ?? item.ck_qty ?? 0
+            }))
             return {
-                data: res.data || [],
+                data: items,
                 pagination: res.pagination || null,
             }
         } catch (err) {
@@ -227,7 +236,7 @@ export const bulkUploadInventory = createAsyncThunk(
             const formData = new FormData()
             formData.append('file', file)
             if (martId) formData.append('martid', martId)
-            if (staffId) formData.append('staff_id', staffId)
+            if (staffId) formData.append('staffid', staffId)
             const res = await api.post('/inventory/bulk', formData)
             if (!res.success) {
                 dispatch(showToast({ message: res.message || 'Bulk upload failed', type: 'error' }))

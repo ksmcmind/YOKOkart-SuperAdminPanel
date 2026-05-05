@@ -25,6 +25,7 @@ import Badge from '../components/Badge'
 import Input, { Select } from '../components/Input'
 import BulkUploadModal from '../components/BulkUploadModal'
 import useAuth from '../hooks/useAuth'
+import api from '../api/index'
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -40,7 +41,7 @@ const SCHEMA_FIELDS = [
   'search_keywords', 'tags', 'is_active', 'is_veg', 'return_policy',
   'hsn_code', 'gst_percentage', 'variant_id', 'variant_name',
   'display_size', 'sku', 'barcode', 'plu_code', 'details', 'images',
-  'is_active_variant',
+  'variant_is_active',
 ]
 
 const FIELD_VALIDATORS = {
@@ -57,6 +58,216 @@ const EMPTY_FORM = {
     { variant_id: '', variant_name: '', display_size: '', sku: '', barcode: '', plu_code: '', details: [], images: [], is_active: true }
   ]
 }
+
+const EMPTY_FILTERS = {
+  categorySlug: '',
+  subcategorySlug: '',
+  brand: '',
+  isActive: '',
+  isVeg: '',
+  search: '',
+  page: 1,
+}
+
+const STATUS_OPTIONS = [
+  { label: 'All Status', value: '' },
+  { label: 'Active', value: 'true' },
+  { label: 'Inactive', value: 'false' },
+]
+
+const VEG_OPTIONS = [
+  { label: 'All Dietary', value: '' },
+  { label: 'Veg', value: 'true' },
+  { label: 'Non-Veg', value: 'false' },
+]
+
+function getActiveChips(f, categories) {
+  const chips = []
+  if (f.categorySlug) {
+    const cat = categories.find(c => c.slug === f.categorySlug)
+    chips.push({ key: 'categorySlug', label: `Category: ${cat?.name || f.categorySlug}` })
+  }
+  if (f.subcategorySlug) chips.push({ key: 'subcategorySlug', label: `Sub: ${f.subcategorySlug}` })
+  if (f.brand) chips.push({ key: 'brand', label: `Brand: ${f.brand}` })
+  if (f.isActive) chips.push({ key: 'isActive', label: f.isActive === 'true' ? 'Active' : 'Inactive' })
+  if (f.isVeg) chips.push({ key: 'isVeg', label: f.isVeg === 'true' ? 'Veg' : 'Non-Veg' })
+  return chips
+}
+
+function FilterBar({ draft, setDraft, onSearch, onReset, categories, loading }) {
+  const [expanded, setExpanded] = useState(false)
+  const [suggestions, setSuggestions] = useState([])
+  const [suggestLoading, setSuggestLoading] = useState(false)
+  const [showSuggest, setShowSuggest] = useState(false)
+  const suggestRef = useRef(null)
+
+  const set = (k, v) => setDraft(p => ({ ...p, [k]: v }))
+
+  // Debounced autocomplete
+  useEffect(() => {
+    const q = draft.search?.trim()
+    if (!q || q.length < 2) {
+      setSuggestions([])
+      return
+    }
+
+    const timer = setTimeout(async () => {
+      setSuggestLoading(true)
+      try {
+        const res = await api.get(`/products/autocomplete?q=${encodeURIComponent(q)}`)
+        console.log('[Autocomplete] Response:', res)
+        if (res.success) {
+          setSuggestions(res.data?.suggestions || [])
+          setShowSuggest(true)
+        }
+      } catch (err) {
+        console.error('[Autocomplete] Failed:', err)
+      } finally {
+        setSuggestLoading(false)
+      }
+    }, 400)
+
+    return () => clearTimeout(timer)
+  }, [draft.search])
+
+  // Close on click outside
+  useEffect(() => {
+    const clickOut = (e) => {
+      if (suggestRef.current && !suggestRef.current.contains(e.target)) {
+        setShowSuggest(false)
+      }
+    }
+    document.addEventListener('mousedown', clickOut)
+    return () => document.removeEventListener('mousedown', clickOut)
+  }, [])
+
+  const handleSelect = (val) => {
+    set('search', val)
+    setShowSuggest(false)
+    // Delay slightly to let state update before committing
+    setTimeout(onSearch, 50)
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-100 shadow-sm transition-all">
+      <div className="p-3 flex flex-wrap gap-3 items-center">
+        <div className="relative flex-1 min-w-[200px]" ref={suggestRef}>
+          <input
+            type="text"
+            placeholder="Search products by name, code, brand..."
+            className="w-full pl-9 pr-4 py-2 bg-gray-50 border-none rounded-lg text-sm focus:ring-2 focus:ring-primary-500 transition-all"
+            value={draft.search}
+            onChange={e => { set('search', e.target.value); setShowSuggest(true) }}
+            onKeyDown={e => {
+              if (e.key === 'Enter') {
+                onSearch()
+                setShowSuggest(false)
+              }
+            }}
+            onFocus={() => suggestions.length > 0 && setShowSuggest(true)}
+          />
+          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          {suggestLoading && (
+            <div className="absolute right-3 top-1/2 -translate-y-1/2">
+              <div className="w-3 h-3 border-2 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
+            </div>
+          )}
+
+          {/* Suggestions Dropdown */}
+          {showSuggest && draft.search.length >= 2 && (
+            <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white border border-gray-100 rounded-xl shadow-xl overflow-hidden animate-in fade-in slide-in-from-top-1 duration-150 max-h-60 overflow-y-auto">
+              {suggestions.length > 0 ? (
+                suggestions.map((s, i) => (
+                  <button
+                    key={i}
+                    onClick={() => handleSelect(s.name)}
+                    className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-primary-50 border-b border-gray-50 last:border-none flex items-center justify-between transition-colors"
+                  >
+                    <div className="flex items-center gap-3">
+                      <svg className="w-3.5 h-3.5 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                      </svg>
+                      <span className="font-medium truncate max-w-[150px] sm:max-w-[200px]">{s.name}</span>
+                    </div>
+                    {s.brand && (
+                      <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{s.brand}</span>
+                    )}
+                  </button>
+                ))
+              ) : !suggestLoading ? (
+                <div className="px-4 py-3 text-xs text-gray-400 italic bg-gray-50/50">
+                  No products found for "{draft.search}"
+                </div>
+              ) : null}
+            </div>
+          )}
+        </div>
+
+        <div className="flex gap-2">
+
+          <Button variant="secondary" size="sm" onClick={() => setExpanded(!expanded)} className={expanded ? 'bg-gray-100' : ''}>
+            <svg className={`w-4 h-4 mr-1.5 transition-transform ${expanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+            </svg>
+            Filters
+          </Button>
+          <Button variant="primary" size="sm" onClick={onSearch} loading={loading}>Search</Button>
+        </div>
+      </div>
+
+      {expanded && (
+        <div className="px-3 pb-4 pt-1 border-t border-gray-50 bg-gray-50/30 grid grid-cols-1 md:grid-cols-4 gap-4 animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-bold text-gray-400 uppercase ml-1">Category</label>
+            <Select value={draft.categorySlug} onChange={e => { set('categorySlug', e.target.value); set('subcategorySlug', '') }} className="bg-white border-gray-200">
+              <option value="">All Categories</option>
+              {categories.map(c => <option key={c.slug} value={c.slug}>{c.name}</option>)}
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-bold text-gray-400 uppercase ml-1">Subcategory</label>
+            <Select value={draft.subcategorySlug} onChange={e => set('subcategorySlug', e.target.value)} disabled={!draft.categorySlug} className="bg-white border-gray-200">
+              <option value="">All Subcategories</option>
+              {categories.find(c => c.slug === draft.categorySlug)?.subcategories.map(s => (
+                <option key={s.slug} value={s.slug}>{s.name}</option>
+              ))}
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-bold text-gray-400 uppercase ml-1">Brand</label>
+            <input
+              type="text"
+              placeholder="Filter by brand..."
+              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-primary-500 focus:ring-0 transition-all bg-white"
+              value={draft.brand}
+              onChange={e => set('brand', e.target.value)}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold text-gray-400 uppercase ml-1">Status</label>
+              <Select value={draft.isActive} onChange={e => set('isActive', e.target.value)} className="bg-white border-gray-200">
+                {STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold text-gray-400 uppercase ml-1">Dietary</label>
+              <Select value={draft.isVeg} onChange={e => set('isVeg', e.target.value)} className="bg-white border-gray-200">
+                {VEG_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </Select>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 
 // ── Components ───────────────────────────────────────────────────────────────
 
@@ -158,9 +369,14 @@ export default function Products() {
   const [form, setForm] = useState(EMPTY_FORM)
   const [isEdit, setIsEdit] = useState(false)
 
-  const filtered = useSelector(s => selectFilteredProducts(s, search))
+  // Filter state
+  const [committedFilters, setCommittedFilters] = useState(EMPTY_FILTERS)
+  const [draftFilters, setDraftFilters] = useState(EMPTY_FILTERS)
 
+  const products = useSelector(selectAllProducts)
+  const pagination = useSelector(state => state.product.pagination)
   const productError = useSelector(selectProductError)
+
 
   // Fetch categories once
   useEffect(() => {
@@ -170,31 +386,22 @@ export default function Products() {
   // Debounced fetch — prevents hammering the API on every keystroke or StrictMode double-invoke.
   // If the last request failed (e.g. rate limit), stop retrying automatically.
   // Error is cleared when the user actively changes a filter so they can try again.
-  const fetchTimerRef = useRef(null)
-  const lastFetchKeyRef = useRef(null)
-
   useEffect(() => {
-    const key = `${categorySlug}|${subcategorySlug}|${search}`
-    if (lastFetchKeyRef.current === key) return  // same params — skip
-    if (productError) {                          // failed — don't auto-retry
-      // Clear error only when the user actively changed something (key changed)
-      dispatch(clearProductError())
-      return
-    }
+    dispatch(fetchProducts(committedFilters))
+  }, [dispatch, committedFilters])
 
-    clearTimeout(fetchTimerRef.current)
-    fetchTimerRef.current = setTimeout(() => {
-      lastFetchKeyRef.current = key
-      dispatch(fetchProducts({
-        categorySlug,
-        subcategorySlug,
-        search: search.length >= 3 ? search : '',
-        code: search
-      }))
-    }, search ? 400 : 0)
+  const handleSearch = () => setCommittedFilters({ ...draftFilters, page: 1 })
+  const handleReset = () => {
+    setDraftFilters(EMPTY_FILTERS)
+    setCommittedFilters(EMPTY_FILTERS)
+  }
 
-    return () => clearTimeout(fetchTimerRef.current)
-  }, [categorySlug, subcategorySlug, search, dispatch, productError])
+  const removeChip = (key) => {
+    const next = { ...committedFilters, [key]: '', page: 1 }
+    setCommittedFilters(next)
+    setDraftFilters(p => ({ ...p, [key]: '' }))
+  }
+
 
   const handleEdit = (product) => {
     setForm({
@@ -328,11 +535,13 @@ export default function Products() {
         sku: r.sku, barcode: r.barcode, plu_code: r.plu_code,
         details: r.details || '{}',
         images: r.images?.split('|').map(u => u.trim()).filter(Boolean) || [],
-        is_active: r.is_active_variant?.toLowerCase() === 'true',
+        is_active: r.variant_is_active?.toLowerCase() === 'true',
       })
     })
     return [...map.values()]
   }
+
+  const activeChips = getActiveChips(committedFilters, categories)
 
   return (
     <div className="p-4 sm:p-6 space-y-4">
@@ -347,30 +556,36 @@ export default function Products() {
         )}
       />
 
+      <FilterBar
+        draft={draftFilters}
+        setDraft={setDraftFilters}
+        onSearch={handleSearch}
+        onReset={handleReset}
+        categories={categories}
+        loading={loading}
+      />
+
+      {activeChips.length > 0 && (
+        <div className="flex flex-wrap gap-2 items-center">
+          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mr-1">Active Filters:</span>
+          {activeChips.map(c => (
+            <div key={c.key} className="flex items-center gap-1.5 px-2 py-1 bg-primary-50 border border-primary-100 rounded-lg text-[11px] font-bold text-primary-700">
+              {c.label}
+              <button onClick={() => removeChip(c.key)} className="hover:text-primary-900 transition-colors">✕</button>
+            </div>
+          ))}
+          <button onClick={handleReset} className="text-[10px] text-gray-400 font-bold hover:text-red-500 ml-1 transition-colors uppercase tracking-widest">CLEAR ALL</button>
+        </div>
+      )}
+
       <Grid
         columns={columns}
-        data={filtered}
+        data={products}
         loading={loading}
-        externalSearchValue={search}
-        onSearchChange={setSearch}
+        showSearch={false}
         renderExpanded={renderExpanded}
-        actions={
-          <div className="flex gap-2">
-            <Select value={categorySlug} onChange={e => { setCategorySlug(e.target.value); setSubcategorySlug('') }}>
-              <option value="">All Categories</option>
-              {categories.map(c => <option key={c.slug} value={c.slug}>{c.name}</option>)}
-            </Select>
-            {categorySlug && (
-              <Select value={subcategorySlug} onChange={e => setSubcategorySlug(e.target.value)}>
-                <option value="">All Subcategories</option>
-                {categories.find(c => c.slug === categorySlug)?.subcategories.map(s => (
-                  <option key={s.slug} value={s.slug}>{s.name}</option>
-                ))}
-              </Select>
-            )}
-          </div>
-        }
       />
+
 
       <Modal
         open={addOpen}
