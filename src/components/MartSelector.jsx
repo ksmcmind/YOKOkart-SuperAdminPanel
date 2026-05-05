@@ -12,7 +12,7 @@ export default function MartSelector({ show, value, onChange, marts }) {
         value={value}
         onChange={e => onChange(e.target.value)}
       >
-        <option value="">All Marts</option>
+        {marts.length === 0 && <option value="">No Marts Available</option>}
         {marts.map(m => (
           <option key={m.id} value={m.id}>
             {m.status === 'open' ? '🟢' : '🔴'} {m.name}

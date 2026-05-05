@@ -11,11 +11,14 @@ export default function useMart() {
   const marts = useSelector(selectAllMarts)
   const [selectedMartId, setSelectedMartId] = useState('')
 
+  // Default to first mart if nothing selected
+  const effectiveSelectedId = selectedMartId || (isSuperAdmin && marts[0]?.id) || ''
+
   // For super admin — selectedMartId is mongo_mart_id from dropdown
   // For others — find their mart by matching tokenMartId against mart id or mongo_mart_id
   const activeMartId = isSuperAdmin
-    ? selectedMartId
-    : marts.find(m => m.id === tokenMartId || m.id === tokenMartId)?.id || tokenMartId
+    ? effectiveSelectedId
+    : marts.find(m => m.id === tokenMartId)?.id || tokenMartId
 
   const activeMart = marts.find(m => m.id === activeMartId)
 
@@ -28,7 +31,7 @@ export default function useMart() {
     setSelectedMartId,
     selectorProps: isSuperAdmin ? {
       show: true,
-      value: selectedMartId,
+      value: effectiveSelectedId,
       onChange: setSelectedMartId,
       marts,
     } : { show: false },

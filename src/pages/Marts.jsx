@@ -74,6 +74,9 @@ export default function Marts() {
     if (!form.name || !form.phone || !form.pg_mart_id || !form.lat || !form.lng) {
       dispatch(showToast({ message: 'Mart ID, Name, Phone, and Coordinates are required', type: 'error' })); return
     }
+    if (!editingMart && (!form.logo || !form.banner)) {
+      dispatch(showToast({ message: 'Mart Logo and Hero Banner are mandatory for new marts', type: 'error' })); return
+    }
     setSaving(true)
     const payload = {
       ...form,
@@ -102,10 +105,10 @@ export default function Marts() {
     {
       key: 'name', label: 'Mart', render: r => (
         <div className="flex items-center gap-3 py-1">
-          <img src={r.logo || '/placeholder.png'} className="w-10 h-10 rounded-lg object-cover shadow-sm" alt="" />
+          <img src={r.logo || '/placeholder.png'} className="w-10 h-10 rounded-lg object-cover shadow-sm border border-gray-100" alt="" />
           <div>
             <p className="font-bold text-gray-900 leading-tight">{r.name}</p>
-            <p className="text-[10px] text-gray-500">{r.address}</p>
+            <p className="text-[10px] text-gray-500 font-mono">#{r.pg_mart_id || r.id?.slice(-8)}</p>
           </div>
         </div>
       )
@@ -119,28 +122,33 @@ export default function Marts() {
       )
     },
     {
+      key: 'logistics', label: 'Financials', render: r => (
+        <div className="text-[10px] leading-tight">
+          <p className="text-gray-600">Min Order: <span className="font-bold text-gray-800">₹{r.min_order_value}</span></p>
+          <p className="text-gray-400">Del: ₹{r.delivery_fee} (Free @ ₹{r.free_delivery_above})</p>
+        </div>
+      )
+    },
+    {
       key: 'location', label: 'Location', render: r => (
         <div className="text-[10px] leading-tight text-gray-500 font-medium uppercase tracking-tighter">
-          <p>{r.city}</p>
+          <p className="text-gray-700 font-bold">{r.city}</p>
           <p>{r.pincode}</p>
         </div>
       )
     },
-    { key: 'status', label: 'Status', render: r => <Badge variant={statusVariant(r.status)} size="sm">{r.status}</Badge> },
+    { key: 'status', label: 'Status', render: r => <Badge variant={statusVariant(r.status)} size="sm">{r.status?.toUpperCase()}</Badge> },
     {
       key: 'actions', label: '', render: r => (
-        <div className="flex gap-2">
-          <Button variant="secondary" size="sm" onClick={() => handleOpenEdit(r)}>Edit</Button>
-          <Button variant={r.status === 'open' ? 'warning' : 'primary'} size="sm" onClick={() => dispatch(toggleMartStatus(r.id))}>
-            {r.status === 'open' ? 'Close' : 'Open'}
-          </Button>
+        <div className="flex justify-end">
+          <Button variant="secondary" size="sm" onClick={() => handleOpenEdit(r)}>Configure</Button>
         </div>
       )
     }
   ]
 
   return (
-    <div>
+    <div className="p-4 sm:p-6 space-y-4">
       <PageHeader title="Marts" subtitle="Manage dark store infrastructure"
         action={<Button variant="primary" onClick={() => { setForm(EMPTY); setEditingMart(null); setModalOpen(true) }}>+ Add New Mart</Button>}
       />
@@ -148,10 +156,13 @@ export default function Marts() {
       <Grid columns={columns} data={marts} loading={loading} searchKey="name" />
 
       <Modal title={editingMart ? `Configure: ${editingMart.name}` : "Create New Mart"} open={modalOpen} onClose={() => setModalOpen(false)} size="lg"
-        footer={<><Button variant="secondary" onClick={() => setModalOpen(false)}>Cancel</Button><Button variant="primary" loading={saving} onClick={handleSave}>Save Mart Configuration</Button></>}>
+        footer={<><Button variant="secondary" onClick={() => setModalOpen(false)}>Cancel</Button><Button variant="primary" loading={saving} onClick={handleSave}>{editingMart ? 'Update Mart' : 'Create Mart'}</Button></>}>
         <div className="space-y-8">
-          <section>
-            <h4 className="text-xs font-bold text-primary-600 uppercase tracking-widest mb-4">Identity & Contact</h4>
+          <section className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
+            <h4 className="text-[10px] font-black text-primary-600 uppercase tracking-widest mb-4 flex items-center gap-2">
+              <span className="w-4 h-4 bg-primary-100 rounded-full flex items-center justify-center text-[8px]">1</span>
+              Identity & Contact
+            </h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Input label="Mart ID *" placeholder="e.g. MART-01" value={form.pg_mart_id} onChange={e => set('pg_mart_id', e.target.value)} />
               <Input label="Mart Name *" placeholder="e.g. Gajuwaka Mart" value={form.name} onChange={e => set('name', e.target.value)} />
@@ -160,8 +171,11 @@ export default function Marts() {
             </div>
           </section>
 
-          <section>
-            <h4 className="text-xs font-bold text-primary-600 uppercase tracking-widest mb-4">Location & Logistics</h4>
+          <section className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
+            <h4 className="text-[10px] font-black text-primary-600 uppercase tracking-widest mb-4 flex items-center gap-2">
+               <span className="w-4 h-4 bg-primary-100 rounded-full flex items-center justify-center text-[8px]">2</span>
+               Location & Logistics
+            </h4>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="md:col-span-2">
                 <Input label="Full Address *" placeholder="Street, Landmark" value={form.address} onChange={e => set('address', e.target.value)} />
@@ -171,38 +185,44 @@ export default function Marts() {
               <Input label="Latitude *" type="number" placeholder="17.xxx" value={form.lat} onChange={e => set('lat', e.target.value)} />
               <Input label="Longitude *" type="number" placeholder="83.xxx" value={form.lng} onChange={e => set('lng', e.target.value)} />
             </div>
-            <div className="mt-4">
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
               <Input label="Service Radius (meters)" type="number" value={form.serviceRadius} onChange={e => set('serviceRadius', e.target.value)} />
               <Input label="Coverage Pincodes" placeholder="Comma separated: 530001, 530002" value={form.coveragePincodes} onChange={e => set('coveragePincodes', e.target.value)} />
             </div>
           </section>
 
-          <section className="bg-gray-50 p-6 rounded-2xl border border-gray-100">
-            <h4 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-4">Branding & Media</h4>
+          <section className="bg-gray-50/50 p-6 rounded-2xl border border-gray-100 shadow-sm">
+            <h4 className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-4 flex items-center gap-2">
+               <span className="w-4 h-4 bg-gray-200 rounded-full flex items-center justify-center text-[8px]">3</span>
+               Branding & Media
+            </h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <ImageInput label="Mart Logo" value={form.logo} onChange={v => set('logo', v)} />
-              <ImageInput label="Hero Banner" value={form.banner} onChange={v => set('banner', v)} />
+              <ImageInput label="Mart Logo *" value={form.logo} onChange={v => set('logo', v)} />
+              <ImageInput label="Hero Banner *" value={form.banner} onChange={v => set('banner', v)} />
             </div>
-            <div className="mt-8">
+            <div className="mt-8 border-t border-gray-100 pt-6">
               <div className="flex justify-between items-center mb-4">
-                <label className="text-sm font-bold text-gray-700">Carousel Banners</label>
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Carousel Banners</label>
                 <Button variant="secondary" size="sm" onClick={addBanner}>+ Add Slide</Button>
               </div>
-              <div className="space-y-4">
+              <div className="grid grid-cols-1 gap-4">
                 {form.banners?.map((b, idx) => (
-                  <div key={idx} className="flex flex-col md:flex-row gap-3 p-4 bg-white border border-gray-200 rounded-xl shadow-sm">
-                    <div className="flex-1"><ImageInput placeholder="Banner URL" value={b.image_url} onChange={v => updateBanner(idx, 'image_url', v)} /></div>
+                  <div key={idx} className="flex flex-col md:flex-row gap-3 p-4 bg-white border border-gray-100 rounded-xl shadow-sm relative group">
+                    <div className="w-full md:w-48"><ImageInput placeholder="Banner URL" value={b.image_url} onChange={v => updateBanner(idx, 'image_url', v)} /></div>
                     <div className="w-full md:w-32"><Select label="Action" value={b.action_type} onChange={e => updateBanner(idx, 'action_type', e.target.value)}><option value="category">Category</option><option value="product">Product</option><option value="external">External</option></Select></div>
-                    <div className="flex-1"><Input label="Value" placeholder="Slug or URL" value={b.action_value} onChange={e => updateBanner(idx, 'action_value', e.target.value)} /></div>
-                    <button onClick={() => removeBanner(idx)} className="self-center text-red-500 hover:text-red-700 font-bold px-2 text-xl">×</button>
+                    <div className="flex-1"><Input label="Action Value" placeholder="Slug or URL" value={b.action_value} onChange={e => updateBanner(idx, 'action_value', e.target.value)} /></div>
+                    <button onClick={() => removeBanner(idx)} className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity shadow-lg">×</button>
                   </div>
                 ))}
               </div>
             </div>
           </section>
 
-          <section>
-            <h4 className="text-xs font-bold text-orange-600 uppercase tracking-widest mb-4">Financials & Hours</h4>
+          <section className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
+            <h4 className="text-[10px] font-black text-orange-600 uppercase tracking-widest mb-4 flex items-center gap-2">
+               <span className="w-4 h-4 bg-orange-100 rounded-full flex items-center justify-center text-[8px]">4</span>
+               Financials & Hours
+            </h4>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <Input label="Min Order Value (₹)" type="number" value={form.minOrderValue} onChange={e => set('minOrderValue', e.target.value)} />
               <Input label="Delivery Fee (₹)" type="number" value={form.deliveryFee} onChange={e => set('deliveryFee', e.target.value)} />
