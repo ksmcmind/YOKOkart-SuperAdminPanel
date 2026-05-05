@@ -15,9 +15,9 @@ export default function useMart() {
   // For others — find their mart by matching tokenMartId against mart id or mongo_mart_id
   const activeMartId = isSuperAdmin
     ? selectedMartId
-    : marts.find(m => m.id === tokenMartId || m.mongo_mart_id === tokenMartId)?.mongo_mart_id || tokenMartId
+    : marts.find(m => m.id === tokenMartId || m.d === tokenMartId)?.id || tokenMartId
 
-  const activeMart = marts.find(m => m.mongo_mart_id === activeMartId)
+  const activeMart = marts.find(m => m.id === activeMartId)
 
   return {
     activeMartId,

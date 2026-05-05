@@ -14,7 +14,7 @@ export default function MartSelector({ show, value, onChange, marts }) {
       >
         <option value="">All Marts</option>
         {marts.map(m => (
-          <option key={m.mongo_mart_id} value={m.mongo_mart_id}>
+          <option key={m.id} value={m.id}>
             {m.status === 'open' ? '🟢' : '🔴'} {m.name}
           </option>
         ))}
