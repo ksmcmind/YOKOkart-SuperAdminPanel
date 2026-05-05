@@ -495,7 +495,7 @@ function RestockModal({ open, onClose, item, martId }) {
         }
         const action = await dispatch(restockInventoryItem({
             mongo_product_id: item.mongo_product_id,
-            mongo_mart_id: martId,
+            martid: martId,
             variant_id: item.variant_id,
             sale_price: parseFloat(item.sale_price),
             mrp: parseFloat(item.mrp),
@@ -780,7 +780,7 @@ export default function Inventory() {
 
         const action = await dispatch(addInventoryItem({
             mongo_product_id: form.product_id, variant_id: form.variant_id,
-            mongo_mart_id: martId, mongo_staff_id: staffId,
+            martid: martId, mongo_staff_id: staffId,
             sale_price: parseFloat(form.sale_price), mrp: parseFloat(form.mrp),
             stock_qty: parseFloat(form.stock_qty), stock_unit: form.stock_unit,
             low_stock_alert: parseFloat(form.low_stock_alert), type: form.type,
