@@ -10,7 +10,7 @@ import orderReducer from './slices/orderSlice'
 import driverReducer from './slices/driverSlice'
 import bannerReducer from './slices/Bannerslice'
 import inventoryReducer from './slices/invetoryslice'
-
+import salesReducer from './slices/salesslice'
 const store = configureStore({
   reducer: {
     auth: authReducer,
@@ -23,6 +23,7 @@ const store = configureStore({
     drivers: driverReducer,
     banners: bannerReducer,
     inventory: inventoryReducer,
+    sales: salesReducer,
   },
 })
 

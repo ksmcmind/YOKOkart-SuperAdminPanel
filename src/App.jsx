@@ -15,7 +15,7 @@ import Inventory from './pages/Inventory'
 import Drivers from './pages/Drivers'
 import BulkUpload from './pages/BulkUpload'
 import BannerManager from './pages/Bannermanager'
-
+import Sales from './pages/Sales'
 // Protected route wrapper
 function Protected({ children }) {
   const isLoggedIn = useSelector(selectIsLoggedIn)
@@ -91,6 +91,7 @@ export default function App() {
       <Route path="/drivers" element={<Protected><Drivers /></Protected>} />
       <Route path="/bulk-upload" element={<Protected><BulkUpload /></Protected>} />
       <Route path="/banners" element={<Protected><BannerManager /></Protected>} />
+      <Route path="/sales" element={<Protected><Sales /></Protected>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )

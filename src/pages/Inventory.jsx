@@ -120,7 +120,7 @@ const EMPTY_FILTERS = {
     sort_by: 'created_at',
     sort_order: 'DESC',
     page: 1,
-    limit: 15,
+    limit: 25,
 }
 
 // ── EditableCell ──────────────────────────────────────────────────────────────
@@ -365,6 +365,7 @@ function FilterBar({ committedFilters, onSearch, onReset, loading }) {
                         </div>
 
                         {/* Expiry + Sort */}
+                        {/* Expiry + Sort + Per Page */}
                         <div className="space-y-4">
                             <div className="space-y-2">
                                 <p className="text-[10px] font-extrabold uppercase tracking-widest text-gray-400">Expiry Date</p>
@@ -392,6 +393,20 @@ function FilterBar({ committedFilters, onSearch, onReset, loading }) {
                                         className="px-3 py-2 text-sm border border-gray-200 rounded-lg hover:border-primary-300 font-bold text-gray-600 transition-colors">
                                         {draft.sort_order === 'ASC' ? '↑' : '↓'}
                                     </button>
+                                </div>
+                            </div>
+                            <div className="space-y-2">
+                                <p className="text-[10px] font-extrabold uppercase tracking-widest text-gray-400">Per Page</p>
+                                <div className="grid grid-cols-4 gap-1">
+                                    {[10, 25, 50, 100].map(n => (
+                                        <button key={n} onClick={() => set('limit', n)}
+                                            className={`text-xs py-2 px-1 rounded-lg border font-medium transition-all ${draft.limit === n
+                                                ? 'bg-primary-600 border-primary-600 text-white shadow-sm'
+                                                : 'bg-white border-gray-200 text-gray-600 hover:border-primary-200 hover:bg-primary-50/50'
+                                                }`}>
+                                            {n}
+                                        </button>
+                                    ))}
                                 </div>
                             </div>
                         </div>
