@@ -921,6 +921,7 @@ export default function Inventory() {
             { label: 'Out of Stock', value: backendSummary.out_of_stock, color: 'text-red-600' },
             { label: 'Low Stock', value: backendSummary.low_stock, color: 'text-yellow-600' },
             { label: 'Active', value: backendSummary.active_items, color: 'text-green-600' },
+            { label: 'In Active', value: backendSummary.inactive_items, color: 'text-gray-600' },
             { label: 'Expiring Soon', value: backendSummary.expiring_soon, color: 'text-orange-500' },
             {
                 label: 'Stock Value',
