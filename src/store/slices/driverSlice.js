@@ -42,7 +42,7 @@ export const toggleDriverStatus = createAsyncThunk(
 export const assignDriverToOrder = createAsyncThunk(
     'drivers/assign',
     async ({ orderId, driverId }, { rejectWithValue }) => {
-        const res = await api.post(`/drivers/${driverId}/assign`, { orderId })
+        const res = await api.post('/orders/assign', { orderId, driverId })  // ← fixed URL
         if (!res.success) return rejectWithValue(res.message)
         return res.data
     }
