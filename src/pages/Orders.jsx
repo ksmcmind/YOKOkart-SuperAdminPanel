@@ -20,6 +20,8 @@ import {
   assignDriverToOrder,
   selectAvailableDrivers,
 } from '../store/slices/driverSlice'
+import BillModal from '../components/BillModal'
+
 // ── Status flow — matches backend VALID_STATUSES ──────────────
 const STATUS_FLOW = {
   pending: { next: 'confirmed', label: '✓ Confirm', color: 'blue' },
@@ -168,32 +170,37 @@ function PaginationBar({ pagination, onPageChange }) {
 // ── AssignDriverModal ─────────────────────────────────────────
 function AssignDriverModal({ open, order, onClose, onAssigned }) {
   const dispatch = useDispatch()
-  const allDrivers = useSelector(selectAvailableDrivers)  // from driverSlice
   const [driverId, setDriverId] = useState('')
   const [loading, setLoading] = useState(false)
+  const [drivers, setDrivers] = useState([])
+  const [driversLoading, setDriversLoading] = useState(false)
 
-  // Fetch available drivers for this mart when modal opens
+  // Load available drivers when modal opens
   useEffect(() => {
     if (!open || !order) return
     setDriverId('')
-    dispatch(fetchDrivers(order.martid || order.martId))
-  }, [open, order?.id, dispatch])
+    setDriversLoading(true)
+    api.get('/drivers?status=available&limit=50')
+      .then(res => { if (res.success) setDrivers(res.data?.drivers || []) })
+      .catch(() => setDrivers([]))
+      .finally(() => setDriversLoading(false))
+  }, [open, order?.id])
 
   const handleAssign = async () => {
-    if (!driverId) {
+    if (!driverId.trim()) {
       dispatch(showToast({ message: 'Please select a driver', type: 'error' }))
       return
     }
     setLoading(true)
     try {
-      const res = await dispatch(assignDriverToOrder({ orderId: order.id, driverId }))
-      if (assignDriverToOrder.fulfilled.match(res)) {
-        dispatch(showToast({ message: `Driver assigned`, type: 'success' }))
+      const res = await api.post('/orders/assign', { orderId: order.id, driverId: driverId.trim() })
+      if (res.success) {
+        dispatch(showToast({ message: `Driver assigned — ${res.data?.driverName || ''}`, type: 'success' }))
         onAssigned()
         onClose()
-      } else {
-        dispatch(showToast({ message: res.payload || 'Failed to assign', type: 'error' }))
       }
+    } catch (err) {
+      dispatch(showToast({ message: err?.message || 'Failed to assign driver', type: 'error' }))
     } finally {
       setLoading(false)
     }
@@ -220,31 +227,31 @@ function AssignDriverModal({ open, order, onClose, onAssigned }) {
         <div className="bg-blue-50 rounded-xl p-3 border border-blue-100">
           <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest mb-1.5">Delivery Address</p>
           <p className="text-xs font-bold text-gray-800">{addr.name || 'Customer'}</p>
-          <p className="text-xs text-gray-600 mt-0.5">
-            {addr.line1}{addr.city ? `, ${addr.city}` : ''}{addr.pincode ? ` — ${addr.pincode}` : ''}
-          </p>
-          {addr.phone && <p className="text-xs text-gray-500 mt-0.5">📞 {addr.phone}</p>}
+          <p className="text-xs text-gray-600 mt-0.5">{addr.line1}{addr.city ? `, ${addr.city}` : ''}</p>
+          {addr.phone && (
+            <p className="text-xs text-gray-500 mt-0.5">📞 {addr.phone}</p>
+          )}
+          {addr.pincode && (
+            <p className="text-xs text-gray-400 mt-0.5">PIN: {addr.pincode}</p>
+          )}
         </div>
 
-        {/* Driver dropdown */}
+        {/* Driver select */}
         <div className="space-y-1.5">
           <label className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-            Available Drivers ({allDrivers.length})
+            Select Available Driver
           </label>
-
-          {allDrivers.length === 0 ? (
-            <div className="text-xs text-gray-400 py-4 text-center bg-gray-50 rounded-xl border border-gray-100">
-              No available drivers right now
-            </div>
-          ) : (
-            <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
-              {allDrivers.map(d => (
+          {driversLoading ? (
+            <div className="text-xs text-gray-400 py-3 text-center">Loading drivers…</div>
+          ) : drivers.length > 0 ? (
+            <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+              {drivers.map(d => (
                 <button
                   key={d.id}
                   onClick={() => setDriverId(d.id)}
                   className={`w-full text-left px-3 py-2.5 rounded-xl border transition-all ${driverId === d.id
-                    ? 'bg-primary-600 border-primary-600 text-white'
-                    : 'bg-white border-gray-200 hover:border-primary-200 hover:bg-primary-50/50'
+                      ? 'bg-primary-600 border-primary-600 text-white'
+                      : 'bg-white border-gray-200 hover:border-primary-200 hover:bg-primary-50/50'
                     }`}
                 >
                   <div className="flex items-center justify-between">
@@ -253,7 +260,7 @@ function AssignDriverModal({ open, order, onClose, onAssigned }) {
                         {d.name}
                       </p>
                       <p className={`text-[10px] mt-0.5 ${driverId === d.id ? 'text-white/70' : 'text-gray-400'}`}>
-                        {d.vehicleType} · {d.vehicleNumber}
+                        {d.vehicle_type} · {d.vehicle_number}
                       </p>
                     </div>
                     <p className={`text-[10px] font-bold ${driverId === d.id ? 'text-white/80' : 'text-gray-400'}`}>
@@ -263,6 +270,16 @@ function AssignDriverModal({ open, order, onClose, onAssigned }) {
                 </button>
               ))}
             </div>
+          ) : (
+            <>
+              <p className="text-xs text-gray-400 py-2 text-center">No available drivers — enter ID manually</p>
+              <input
+                value={driverId}
+                onChange={e => setDriverId(e.target.value)}
+                placeholder="Enter driver ID"
+                className="w-full text-xs border border-gray-200 rounded-xl px-3 py-2.5 outline-none focus:border-primary-400 bg-gray-50 focus:bg-white"
+              />
+            </>
           )}
         </div>
       </div>
@@ -271,7 +288,7 @@ function AssignDriverModal({ open, order, onClose, onAssigned }) {
 }
 
 // ── OrderDetailModal ──────────────────────────────────────────
-function OrderDetailModal({ selected, onClose, onStatus, onAssign }) {
+function OrderDetailModal({ selected, onClose, onStatus, onAssign, onBill }) {
   if (!selected) return null
   const flow = STATUS_FLOW[selected.status]
   const addr = selected.delivery_address || {}
@@ -285,6 +302,10 @@ function OrderDetailModal({ selected, onClose, onStatus, onAssign }) {
       footer={
         <div className="flex gap-2 justify-end">
           <Button variant="secondary" onClick={onClose}>Close</Button>
+          {/* Bill button in detail modal */}
+          {['packed', 'assigned', 'out_for_delivery', 'delivered'].includes(selected.status) && (
+            <Button variant="secondary" onClick={() => { onClose(); onBill(selected) }}>🧾 Print Bill</Button>
+          )}
           {flow && (
             flow.special === 'assign'
               ? <Button variant="primary" onClick={() => { onClose(); onAssign(selected) }}>🚗 Assign Driver</Button>
@@ -421,6 +442,7 @@ export default function Orders() {
   })
   const [selected, setSelected] = useState(null)
   const [assignOrder, setAssignOrder] = useState(null)
+  const [billOrder, setBillOrder] = useState(null)
 
   useEffect(() => { dispatch(fetchMarts()) }, [dispatch])
 
@@ -497,6 +519,14 @@ export default function Orders() {
               className="text-[10px] text-gray-600 font-black hover:bg-gray-100 px-2 py-1 rounded transition-colors uppercase tracking-tighter">
               View
             </button>
+            {/* Bill button — shown for packed and beyond */}
+            {['packed', 'assigned', 'out_for_delivery', 'delivered'].includes(r.status) && (
+              <button
+                onClick={e => { e.stopPropagation(); setBillOrder(r) }}
+                className="text-[10px] text-gray-700 font-black hover:bg-gray-100 px-2 py-1 rounded transition-colors uppercase tracking-tighter">
+                🧾 Bill
+              </button>
+            )}
             {flow && (
               flow.special === 'assign'
                 ? <button
@@ -562,6 +592,7 @@ export default function Orders() {
         onClose={() => setSelected(null)}
         onStatus={handleStatus}
         onAssign={(order) => setAssignOrder(order)}
+        onBill={(order) => setBillOrder(order)}
       />
 
       {/* Assign driver modal */}
@@ -570,6 +601,13 @@ export default function Orders() {
         order={assignOrder}
         onClose={() => setAssignOrder(null)}
         onAssigned={refresh}
+      />
+
+      {/* Bill modal */}
+      <BillModal
+        open={!!billOrder}
+        order={billOrder}
+        onClose={() => setBillOrder(null)}
       />
     </div>
   )
