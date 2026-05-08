@@ -4,11 +4,13 @@ import api from '../../api/index'
 
 export const fetchDrivers = createAsyncThunk(
     'drivers/fetchAll',
-    async (martId, { rejectWithValue }) => {
-        const url = martId ? `/drivers?martId=${martId}` : '/drivers'
-        const res = await api.get(url)
+    async ({ martId, status } = {}, { rejectWithValue }) => {
+        const query = new URLSearchParams()
+        if (martId) query.append('martid', martId)   // ✅ lowercase — matches backend req.query.martid
+        if (status) query.append('status', status)
+        const res = await api.get(`/drivers?${query.toString()}`)
         if (!res.success) return rejectWithValue(res.message)
-        return res.data
+        return res.data || []
     }
 )
 
@@ -30,10 +32,14 @@ export const updateDriver = createAsyncThunk(
     }
 )
 
+// ✅ restored — used by Drivers.jsx Enable/Disable button
 export const toggleDriverStatus = createAsyncThunk(
     'drivers/toggle',
-    async (driverId, { rejectWithValue }) => {
-        const res = await api.patch(`/drivers/${driverId}/toggle`)
+    async (driverId, { getState, rejectWithValue }) => {
+        // Read current is_active from store, flip it
+        const current = getState().drivers.list.find(d => d.id === driverId)
+        const newActive = !(current?.isActive ?? current?.is_active)
+        const res = await api.patch(`/drivers/${driverId}`, { is_active: newActive })
         if (!res.success) return rejectWithValue(res.message)
         return res.data
     }
@@ -42,7 +48,8 @@ export const toggleDriverStatus = createAsyncThunk(
 export const assignDriverToOrder = createAsyncThunk(
     'drivers/assign',
     async ({ orderId, driverId }, { rejectWithValue }) => {
-        const res = await api.post('/orders/assign', { orderId, driverId })  // ← fixed URL
+        // ✅ manager assigns via /drivers/assign
+        const res = await api.post('/drivers/assign', { orderId, driverId })
         if (!res.success) return rejectWithValue(res.message)
         return res.data
     }
@@ -66,14 +73,8 @@ const driverSlice = createSlice({
     extraReducers: (builder) => {
         builder
             .addCase(fetchDrivers.pending, (state) => { state.loading = true; state.error = null })
-            .addCase(fetchDrivers.fulfilled, (state, action) => {
-                state.loading = false
-                state.list = action.payload || []
-            })
-            .addCase(fetchDrivers.rejected, (state, action) => {
-                state.loading = false
-                state.error = action.payload
-            })
+            .addCase(fetchDrivers.fulfilled, (state, action) => { state.loading = false; state.list = action.payload })
+            .addCase(fetchDrivers.rejected, (state, action) => { state.loading = false; state.error = action.payload })
 
         builder
             .addCase(createDriver.fulfilled, (state, action) => {
@@ -89,13 +90,14 @@ const driverSlice = createSlice({
         builder
             .addCase(toggleDriverStatus.fulfilled, (state, action) => {
                 const idx = state.list.findIndex(d => d.id === action.payload.id)
-                if (idx !== -1) state.list[idx].is_active = action.payload.is_active
+                if (idx !== -1) state.list[idx] = { ...state.list[idx], ...action.payload }
             })
 
         builder
             .addCase(assignDriverToOrder.fulfilled, (state, action) => {
                 const idx = state.list.findIndex(d => d.id === action.payload.driverId)
-                if (idx !== -1) state.list[idx].status = 'on_trip'
+                // ✅ driver goes to 'assigned' after manager assigns, not 'on_trip'
+                if (idx !== -1) state.list[idx].status = 'assigned'
             })
     },
 })
@@ -104,7 +106,7 @@ export const selectAllDrivers = (state) => state.drivers.list
 export const selectDriversLoading = (state) => state.drivers.loading
 export const selectDriversError = (state) => state.drivers.error
 export const selectAvailableDrivers = (state) =>
-    state.drivers.list.filter(d => d.status === 'available' && d.is_active)
+    state.drivers.list.filter(d => d.status === 'available' && d.isActive)
 
 export const { clearDriverError, updateDriverLocation } = driverSlice.actions
 export default driverSlice.reducer

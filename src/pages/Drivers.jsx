@@ -47,7 +47,7 @@ export default function Drivers() {
 
   useEffect(() => { dispatch(fetchMarts()) }, [dispatch])
   useEffect(() => {
-    if (activeMartId) dispatch(fetchDrivers(activeMartId))
+    if (activeMartId) dispatch(fetchDrivers({ martId: activeMartId }))
   }, [activeMartId, dispatch])
 
   useEffect(() => {
@@ -63,7 +63,7 @@ export default function Drivers() {
     if (!form.name || !form.phone || !form.mongoMartId) {
       dispatch(showToast({ message: 'Name, phone and mart required', type: 'error' })); return
     }
-    
+
     // All docs mandatory for new drivers
     if (!editingDriver) {
       if (!form.profileImageFile || !form.licenceImageFile || !form.panImageFile || !form.aadhaarImageFile) {
@@ -185,9 +185,9 @@ export default function Drivers() {
         searchKey="name"
       />
 
-      <Modal open={open} onClose={() => { setOpen(false); setEditingDriver(null); setForm(INITIAL); }} 
-             title={editingDriver ? `Edit Driver: ${editingDriver.name}` : "Add New Driver"} size="lg"
-             footer={<><Button variant="secondary" onClick={() => setOpen(false)}>Cancel</Button><Button variant="primary" loading={saving} onClick={handleSave}>{editingDriver ? 'Update Driver' : 'Create Driver'}</Button></>}>
+      <Modal open={open} onClose={() => { setOpen(false); setEditingDriver(null); setForm(INITIAL); }}
+        title={editingDriver ? `Edit Driver: ${editingDriver.name}` : "Add New Driver"} size="lg"
+        footer={<><Button variant="secondary" onClick={() => setOpen(false)}>Cancel</Button><Button variant="primary" loading={saving} onClick={handleSave}>{editingDriver ? 'Update Driver' : 'Create Driver'}</Button></>}>
         <div className="space-y-8">
           <section className="bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
             <h4 className="text-[10px] font-black text-primary-600 uppercase tracking-widest mb-4 flex items-center gap-2">
@@ -228,11 +228,11 @@ export default function Drivers() {
 
           <section className="bg-gray-50/50 p-6 rounded-2xl border border-gray-100 shadow-sm">
             <h4 className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-4 flex items-center gap-2">
-               <span className="w-4 h-4 bg-gray-200 rounded-full flex items-center justify-center text-[8px]">3</span>
-               Verification Documents
+              <span className="w-4 h-4 bg-gray-200 rounded-full flex items-center justify-center text-[8px]">3</span>
+              Verification Documents
             </h4>
             {!editingDriver && <p className="text-[10px] text-red-500 mb-4 font-black tracking-tighter">* PHOTO, LICENCE, PAN, AND AADHAAR ARE ALL REQUIRED</p>}
-            
+
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <ImageUpload label="Driving Licence *" value={form.licenceImageFile} onChange={file => set('licenceImageFile', file)} />
               <ImageUpload label="PAN Card *" value={form.panImageFile} onChange={file => set('panImageFile', file)} />
