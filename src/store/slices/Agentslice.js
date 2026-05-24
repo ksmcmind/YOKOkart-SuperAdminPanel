@@ -5,7 +5,7 @@
  */
 
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
-import api from '../../api/axiosInstance';
+import api from '../../api/index'
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // MANDAL AGENTS

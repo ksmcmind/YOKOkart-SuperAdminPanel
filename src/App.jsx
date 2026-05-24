@@ -17,6 +17,10 @@ import BulkUpload from './pages/BulkUpload'
 import BannerManager from './pages/Bannermanager'
 import Sales from './pages/Sales'
 import Collections from './pages/Collections'
+import SubAgentManager from './pages/Subagentmanager'
+import GeoHierarchyManager from './pages/GeoHierarchyManager'
+import MandalAgentManager from './pages/Mandalagentmanager'
+
 // Protected route wrapper
 function Protected({ children }) {
   const isLoggedIn = useSelector(selectIsLoggedIn)
@@ -95,6 +99,9 @@ export default function App() {
       <Route path="/sales" element={<Protected><Sales /></Protected>} />
       <Route path="*" element={<Navigate to="/" replace />} />
       <Route path="/collections" element={<Protected><Collections /></Protected>} />
+      <Route path="/subagents" element={<Protected><SubAgentManager /></Protected>} />
+      <Route path="/geo-hierarchy" element={<Protected><GeoHierarchyManager /></Protected>} />
+      <Route path="/mandal-agents" element={<Protected><MandalAgentManager /></Protected>} />
     </Routes>
   )
 }

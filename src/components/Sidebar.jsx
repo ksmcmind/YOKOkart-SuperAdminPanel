@@ -17,6 +17,9 @@ const NAV = [
     { to: '/drivers', label: 'Drivers', icon: '🚴' },
     // { to: '/banners', label: 'Banners', icon: '🖼️' },
     { to: '/sales', label: 'Sales', icon: '💰' },
+    { to: '/subagents', label: 'Sub Agents', icon: '👥' },
+    { to: '/geo-hierarchy', label: 'Geo Hierarchy', icon: '🌍' },
+    { to: '/mandal-agents', label: 'Mandal Agents', icon: '👥' },
 
 
 ]
