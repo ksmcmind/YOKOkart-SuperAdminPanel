@@ -827,6 +827,17 @@ export default function Inventory() {
             render: r => <Badge variant="blue" size="xs">{r.variant_id}</Badge>,
         },
         {
+            key: 'cogs', label: 'COGS',
+            render: r => (
+                <div className="flex items-center gap-3 text-[11px]">
+                    <div className="flex items-center gap-1">
+                        <span className="text-gray-400 font-bold text-[9px] uppercase">Cost:</span>
+                        <span className="font-bold text-primary-600 flex items-center">₹<EditableCell value={r.cogs} type="number" onSave={v => handleInlineUpdate(r.id, 'cogs', v)} /></span>
+                    </div>
+                </div>
+            )
+        },
+        {
             key: 'pricing', label: 'Pricing',
             render: r => (
                 <div className="flex items-center gap-3 text-[11px]">
@@ -841,6 +852,7 @@ export default function Inventory() {
                 </div>
             ),
         },
+
         {
             key: 'stock', label: 'Inventory',
             render: r => {

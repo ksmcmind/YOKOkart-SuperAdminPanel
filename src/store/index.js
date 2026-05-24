@@ -11,6 +11,9 @@ import driverReducer from './slices/driverSlice'
 import bannerReducer from './slices/Bannerslice'
 import inventoryReducer from './slices/invetoryslice'
 import salesReducer from './slices/salesslice'
+import collectionsReducer from './slices/Collectionslice'
+import agentReducer from './slices/Agentslice'
+import geoReducer from './slices/Geoslice'
 const store = configureStore({
   reducer: {
     auth: authReducer,
@@ -24,6 +27,9 @@ const store = configureStore({
     banners: bannerReducer,
     inventory: inventoryReducer,
     sales: salesReducer,
+    collection: collectionsReducer,
+    geo: geoReducer,
+    agents: agentReducer
   },
 })
 

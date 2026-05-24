@@ -2,7 +2,6 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit'
 import api from '../../api/index'
 
-// ── Thunks ────────────────────────────────────────────────────
 export const fetchMarts = createAsyncThunk(
   'mart/fetchAll',
   async (_, { rejectWithValue }) => {
@@ -13,9 +12,7 @@ export const fetchMarts = createAsyncThunk(
   {
     condition: (_, { getState }) => {
       const { mart } = getState()
-      if (mart.list.length > 0 && !mart.loading) {
-        return false // Already have data, skip redundant call
-      }
+      if (mart.list.length > 0 && !mart.loading) return false
     }
   }
 )
@@ -40,8 +37,8 @@ export const createMart = createAsyncThunk(
 
 export const toggleMartStatus = createAsyncThunk(
   'mart/toggle',
-  async (martId, { rejectWithValue }) => {
-    const res = await api.patch(`/marts/${martId}/toggle`)
+  async ({ martId, is_active }, { rejectWithValue }) => {
+    const res = await api.patch(`/marts/${martId}/toggle`, { is_active })
     if (!res.success) return rejectWithValue(res.message)
     return res.data
   }
@@ -59,13 +56,13 @@ export const updateMart = createAsyncThunk(
 export const setMartStatus = createAsyncThunk(
   'mart/setStatus',
   async ({ id, status }, { rejectWithValue }) => {
-    const res = await api.patch(`/marts/${id}/status`, { status })
+    // ✅ FIX: backend expects { notice } not { status }
+    const res = await api.patch(`/marts/${id}/status`, { notice: status })
     if (!res.success) return rejectWithValue(res.message)
     return res.data
   }
 )
 
-// ── Slice ─────────────────────────────────────────────────────
 const martSlice = createSlice({
   name: 'mart',
   initialState: {
@@ -79,58 +76,43 @@ const martSlice = createSlice({
     clearMartError: (state) => { state.error = null },
   },
   extraReducers: (builder) => {
-    // Fetch all
     builder
-      .addCase(fetchMarts.pending, (state) => {
-        state.loading = true; state.error = null
+      .addCase(fetchMarts.pending, (state) => { state.loading = true; state.error = null })
+      .addCase(fetchMarts.fulfilled, (state, action) => { state.loading = false; state.list = Array.isArray(action.payload) ? action.payload : [] })
+      .addCase(fetchMarts.rejected, (state, action) => { state.loading = false; state.error = action.payload })
+
+      .addCase(fetchMartById.fulfilled, (state, action) => {
+        state.selected = action.payload
+        const idx = state.list.findIndex(m => m.id === action.payload.id)
+        if (idx !== -1) state.list[idx] = action.payload
       })
-      .addCase(fetchMarts.fulfilled, (state, action) => {
-        state.loading = false
-        state.list = Array.isArray(action.payload) ? action.payload : []
-      })
-      .addCase(fetchMarts.rejected, (state, action) => {
-        state.loading = false; state.error = action.payload
+
+      .addCase(createMart.fulfilled, (state, action) => {
+        state.list.unshift(action.payload)
       })
 
-    // Fetch by id
-    builder.addCase(fetchMartById.fulfilled, (state, action) => {
-      state.selected = action.payload
-      const idx = state.list.findIndex(m => m.id === action.payload.id)
-      if (idx !== -1) state.list[idx] = action.payload
-    })
+      .addCase(toggleMartStatus.fulfilled, (state, action) => {
+        const idx = state.list.findIndex(m => m.id === action.payload.id)
+        if (idx !== -1) state.list[idx] = action.payload
+      })
 
-    // Create
-    builder.addCase(createMart.fulfilled, (state, action) => {
-      state.list.unshift(action.payload)
-    })
+      .addCase(setMartStatus.fulfilled, (state, action) => {
+        const idx = state.list.findIndex(m => m.id === action.payload.id)
+        if (idx !== -1) state.list[idx] = action.payload
+      })
 
-    // Toggle status — replace whole row (backend returns full mart)
-    builder.addCase(toggleMartStatus.fulfilled, (state, action) => {
-      const idx = state.list.findIndex(m => m.id === action.payload.id)
-      if (idx !== -1) state.list[idx] = action.payload
-    })
-
-    // Set status
-    builder.addCase(setMartStatus.fulfilled, (state, action) => {
-      const idx = state.list.findIndex(m => m.id === action.payload.id)
-      if (idx !== -1) state.list[idx] = action.payload
-    })
-
-    // Update
-    builder.addCase(updateMart.fulfilled, (state, action) => {
-      const idx = state.list.findIndex(m => m.id === action.payload.id)
-      if (idx !== -1) state.list[idx] = action.payload
-    })
+      .addCase(updateMart.fulfilled, (state, action) => {
+        const idx = state.list.findIndex(m => m.id === action.payload.id)
+        if (idx !== -1) state.list[idx] = action.payload
+      })
   },
 })
 
-// ── Selectors ─────────────────────────────────────────────────
 export const selectAllMarts = (state) => state.mart.list
 export const selectSelectedMart = (state) => state.mart.selected
 export const selectMartsLoading = (state) => state.mart.loading
 export const selectMartsError = (state) => state.mart.error
-export const selectOpenMarts = (state) =>
-  state.mart.list.filter(m => m.status === 'open' && m.is_active)
+export const selectOpenMarts = (state) => state.mart.list.filter(m => m.status === 'open' && m.is_active)
 
 export const { setSelectedMart, clearMartError } = martSlice.actions
 export default martSlice.reducer

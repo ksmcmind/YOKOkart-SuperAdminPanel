@@ -9,6 +9,7 @@ const NAV = [
     { to: '/', label: 'Dashboard', icon: '📊' },
     { to: '/marts', label: 'Marts', icon: '🏬' },
     { to: '/staff', label: 'Staff', icon: '👥' },
+    { to: '/collections', label: 'Collections', icon: '💰' },
     { to: '/categories', label: 'Categories', icon: '🗂️' },
     { to: '/products', label: 'Products', icon: '🛍️' },
     { to: '/orders', label: 'Orders', icon: '📦' },
@@ -16,6 +17,7 @@ const NAV = [
     { to: '/drivers', label: 'Drivers', icon: '🚴' },
     // { to: '/banners', label: 'Banners', icon: '🖼️' },
     { to: '/sales', label: 'Sales', icon: '💰' },
+
 
 ]
 
