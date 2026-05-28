@@ -20,6 +20,7 @@ import Collections from './pages/Collections'
 import SubAgentManager from './pages/Subagentmanager'
 import GeoHierarchyManager from './pages/GeoHierarchyManager'
 import MandalAgentManager from './pages/Mandalagentmanager'
+import Warehouses from './pages/Warehouses'
 
 // Protected route wrapper
 function Protected({ children }) {
@@ -88,6 +89,7 @@ export default function App() {
       />
       <Route path="/" element={<Protected><Dashboard /></Protected>} />
       <Route path="/marts" element={<Protected><Marts /></Protected>} />
+      <Route path="/warehouses" element={<Protected><Warehouses /></Protected>} />
       <Route path="/staff" element={<Protected><Staff /></Protected>} />
       <Route path="/categories" element={<Protected><Categories /></Protected>} />
       <Route path="/products" element={<Protected><Products /></Protected>} />

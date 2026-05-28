@@ -37,6 +37,7 @@ const EMPTY = {
   banner: '',
   banners: [],
   operational_notice: '',
+  warehouse_id: '',
 }
 
 const statusVariant = (status) => ({
@@ -55,8 +56,18 @@ export default function Marts() {
   const [form, setForm] = useState(EMPTY)
   const [editingMart, setEditingMart] = useState(null)
   const [saving, setSaving] = useState(false)
+  const [warehouses, setWarehouses] = useState([])
 
   useEffect(() => { dispatch(fetchMarts()) }, [dispatch])
+
+  useEffect(() => {
+    fetch('/api/warehouses')
+      .then(res => res.json())
+      .then(json => {
+        if (json.success) setWarehouses(json.data || [])
+      })
+      .catch(err => console.error('Failed to load warehouses:', err))
+  }, [])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
@@ -88,6 +99,7 @@ export default function Marts() {
       coveragePincodes: Array.isArray(mart.coverage_pincodes)
         ? mart.coverage_pincodes.join(', ')
         : '',
+      warehouse_id: mart.warehouse_id || '',
     })
     setModalOpen(true)
   }
@@ -130,6 +142,7 @@ export default function Marts() {
       coverage_pincodes: form.coveragePincodes
         ? form.coveragePincodes.split(',').map(s => s.trim()).filter(Boolean)
         : [],
+      warehouse_id: form.warehouse_id || null,
     }
 
     const action = editingMart
@@ -181,12 +194,16 @@ export default function Marts() {
       )
     },
     {
-      key: 'location', label: 'Location', render: r => (
-        <div className="text-[10px] leading-tight text-gray-500 font-medium uppercase tracking-tighter">
-          <p className="text-gray-700 font-bold">{r.city}</p>
-          <p>{r.pincode}</p>
-        </div>
-      )
+      key: 'location', label: 'Location', render: r => {
+        const whMatched = warehouses.find(w => w.warehouse_id === r.warehouse_id);
+        return (
+          <div className="text-[10px] leading-tight text-gray-500 font-medium uppercase tracking-tighter">
+            <p className="text-gray-700 font-bold">{r.city}</p>
+            <p>{r.pincode}</p>
+            {whMatched && <p className="text-primary-600 font-semibold mt-0.5">🏭 {whMatched.name}</p>}
+          </div>
+        );
+      }
     },
     {
       key: 'hours', label: 'Hours', render: r => (
@@ -276,9 +293,21 @@ export default function Marts() {
               <Input label="Latitude *" type="number" placeholder="17.xxx" value={form.lat} onChange={e => set('lat', e.target.value)} />
               <Input label="Longitude *" type="number" placeholder="83.xxx" value={form.lng} onChange={e => set('lng', e.target.value)} />
             </div>
-            <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
               <Input label="Service Radius (meters)" type="number" value={form.serviceRadius} onChange={e => set('serviceRadius', e.target.value)} />
               <Input label="Coverage Pincodes" placeholder="530001, 530002, 530026" value={form.coveragePincodes} onChange={e => set('coveragePincodes', e.target.value)} />
+              <Select 
+                label="Associated Warehouse *" 
+                value={form.warehouse_id} 
+                onChange={e => set('warehouse_id', e.target.value)}
+              >
+                <option value="">-- Select Warehouse --</option>
+                {warehouses.map(w => (
+                  <option key={w.warehouse_id} value={w.warehouse_id}>
+                    {w.name} ({w.city})
+                  </option>
+                ))}
+              </Select>
             </div>
           </section>
 

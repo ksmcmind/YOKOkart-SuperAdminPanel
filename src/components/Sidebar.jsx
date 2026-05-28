@@ -8,18 +8,19 @@ import BulkJobNotifications from './BulkJobNotifications'
 const NAV = [
     { to: '/', label: 'Dashboard', icon: '📊' },
     { to: '/marts', label: 'Marts', icon: '🏬' },
+    { to: '/warehouses', label: 'Warehouses', icon: '🏭' },
     { to: '/staff', label: 'Staff', icon: '👥' },
-    { to: '/collections', label: 'Collections', icon: '💰' },
-    { to: '/categories', label: 'Categories', icon: '🗂️' },
+    // { to: '/collections', label: 'Collections', icon: '💰' },
+    // { to: '/categories', label: 'Categories', icon: '🗂️' },
     { to: '/products', label: 'Products', icon: '🛍️' },
     { to: '/orders', label: 'Orders', icon: '📦' },
     { to: '/inventory', label: 'Inventory', icon: '📋' },
     { to: '/drivers', label: 'Drivers', icon: '🚴' },
     // { to: '/banners', label: 'Banners', icon: '🖼️' },
     { to: '/sales', label: 'Sales', icon: '💰' },
-    { to: '/subagents', label: 'Sub Agents', icon: '👥' },
-    { to: '/geo-hierarchy', label: 'Geo Hierarchy', icon: '🌍' },
-    { to: '/mandal-agents', label: 'Mandal Agents', icon: '👥' },
+    // { to: '/subagents', label: 'Sub Agents', icon: '👥' },
+    // { to: '/geo-hierarchy', label: 'Geo Hierarchy', icon: '🌍' },
+    // { to: '/mandal-agents', label: 'Mandal Agents', icon: '👥' },
 
 
 ]

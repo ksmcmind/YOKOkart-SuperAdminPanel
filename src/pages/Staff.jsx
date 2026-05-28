@@ -24,11 +24,12 @@ const ROLES = [
   { value: 'packing_staff', label: 'Packing Staff' },
   { value: 'accountant', label: 'Accountant' },
   { value: 'support', label: 'Support' },
+  { value: 'warehouse_manager', label: 'Warehouse Manager' },
 ]
 
 const EMPTY = {
   name: '', phone: '', email: '', role: 'mart_admin',
-  martId: '', basicSalary: '',
+  martId: '', warehouseId: '', basicSalary: '',
   profileImageFile: null, panImageFile: null, aadhaarImageFile: null,
 }
 
@@ -51,10 +52,18 @@ export default function Staff() {
   const [form, setForm] = useState(EMPTY)
   const [saving, setSaving] = useState(false)
   const [martFilter, setMartFilter] = useState('')
+  const [warehouses, setWarehouses] = useState([])
 
   useEffect(() => {
     dispatch(fetchMarts())
     dispatch(fetchStaff())
+    
+    fetch('/api/warehouses')
+      .then(res => res.json())
+      .then(json => {
+        if (json.success) setWarehouses(json.data || [])
+      })
+      .catch(err => console.error('Failed to load warehouses:', err))
   }, [dispatch])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
@@ -67,7 +76,8 @@ export default function Staff() {
       phone: s.phone,
       email: s.email || '',
       role: s.role,
-      martId: s.pg_mart_id || '', // Use pg_mart_id for assignment
+      martId: s.martId || '',
+      warehouseId: s.warehouseId || '',
       basicSalary: String(s.basic_salary || ''),
     })
     setOpen(true)
@@ -77,7 +87,11 @@ export default function Staff() {
     if (!form.name || !form.phone) {
       dispatch(showToast({ message: 'Name and phone required', type: 'error' })); return
     }
-    if (form.role !== 'super_admin' && !form.martId) {
+    if (form.role === 'warehouse_manager') {
+      if (!form.warehouseId) {
+        dispatch(showToast({ message: 'Warehouse is required for warehouse manager', type: 'error' })); return
+      }
+    } else if (form.role !== 'super_admin' && !form.martId) {
       dispatch(showToast({ message: 'Mart required for this role', type: 'error' })); return
     }
     
@@ -99,7 +113,8 @@ export default function Staff() {
         phone: form.phone,
         email: form.email,
         role: form.role,
-        martId: form.martId || null,
+        martId: (form.role === 'super_admin' || form.role === 'warehouse_manager') ? null : form.martId,
+        warehouseId: form.role === 'warehouse_manager' ? form.warehouseId : null,
         basicSalary: parseFloat(form.basicSalary) || 0,
         ...(profileImage && { profileImage }),
         ...(panImage && { panImage }),
@@ -138,11 +153,15 @@ export default function Staff() {
     { key: 'role', label: 'Role', render: r => <Badge variant="blue" size="xs">{r.role?.replace(/_/g, ' ').toUpperCase()}</Badge> },
     { key: 'status', label: 'Status', render: r => <Badge variant={r.is_active ? 'success' : 'gray'} size="xs">{r.is_active ? 'ACTIVE' : 'INACTIVE'}</Badge> },
     {
-      key: 'mart', label: 'Mart',
+      key: 'facility', label: 'Facility',
       render: r => {
-        if (!r.mongo_mart_id) return <span className="text-[9px] bg-purple-50 text-purple-600 px-1.5 py-0.5 rounded font-black uppercase tracking-tighter border border-purple-100">Super Admin</span>
-        const m = marts.find(m => m.mongo_mart_id === r.mongo_mart_id)
-        return <span className="text-[10px] text-gray-500 font-medium">{m?.name || '—'}</span>
+        if (r.role === 'super_admin') return <span className="text-[9px] bg-purple-50 text-purple-600 px-1.5 py-0.5 rounded font-black uppercase tracking-tighter border border-purple-100">Super Admin</span>
+        if (r.role === 'warehouse_manager') {
+          const w = warehouses.find(w => w.warehouse_id === r.warehouseId)
+          return <span className="text-[10px] text-primary-600 font-semibold uppercase tracking-tighter">🏭 {w?.name || 'Warehouse'}</span>
+        }
+        const m = marts.find(m => m.mongo_mart_id === r.mongo_mart_id || m.id === r.martId)
+        return <span className="text-[10px] text-gray-500 font-medium">🏬 {m?.name || '—'}</span>
       }
     },
     { key: 'salary', label: 'Salary', render: r => <span className="text-xs font-bold text-gray-700">₹{parseFloat(r.basic_salary || 0).toLocaleString()}</span> },
@@ -214,10 +233,17 @@ export default function Staff() {
               <Select label="System Role *" value={form.role} onChange={e => set('role', e.target.value)}>
                 {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
               </Select>
-              <Select label="Assign to Mart *" value={form.martId} onChange={e => set('martId', e.target.value)}>
-                <option value="">Select Mart</option>
-                {marts.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-              </Select>
+              {form.role === 'warehouse_manager' ? (
+                <Select label="Assign to Warehouse *" value={form.warehouseId} onChange={e => set('warehouseId', e.target.value)}>
+                  <option value="">Select Warehouse</option>
+                  {warehouses.map(w => <option key={w.warehouse_id} value={w.warehouse_id}>{w.name}</option>)}
+                </Select>
+              ) : form.role !== 'super_admin' ? (
+                <Select label="Assign to Mart *" value={form.martId} onChange={e => set('martId', e.target.value)}>
+                  <option value="">Select Mart</option>
+                  {marts.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                </Select>
+              ) : null}
             </div>
           </section>
 
