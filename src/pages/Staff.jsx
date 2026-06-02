@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import {
-  fetchStaff, createStaff, toggleStaffStatus,
+  fetchStaff, createStaff, updateStaff, toggleStaffStatus,
   selectAllStaff, selectStaffLoading,
 } from '../store/slices/staffSlice'
 import { fetchMarts, selectAllMarts } from '../store/slices/martSlice'
@@ -95,11 +95,6 @@ export default function Staff() {
       dispatch(showToast({ message: 'Mart required for this role', type: 'error' })); return
     }
     
-    // Mandatory images for new staff
-    if (!editingStaff && (!form.profileImageFile || !form.panImageFile || !form.aadhaarImageFile)) {
-      dispatch(showToast({ message: 'Profile Photo, PAN Card, and Aadhaar Card are all mandatory', type: 'error' })); return
-    }
-
     setSaving(true)
     try {
       const [profileImage, panImage, aadhaarImage] = await Promise.all([
@@ -213,7 +208,7 @@ export default function Staff() {
             </h4>
             <div className="flex flex-col md:flex-row gap-6">
               <div className="shrink-0">
-                <ImageUpload label="Profile Photo *" value={form.profileImageFile} onChange={file => set('profileImageFile', file)} />
+                <ImageUpload label="Profile Photo" value={form.profileImageFile} onChange={file => set('profileImageFile', file)} />
               </div>
               <div className="flex-1 grid grid-cols-1 md:grid-cols-2 gap-4">
                 <Input label="Full Name *" placeholder="Ravi Kumar" value={form.name} onChange={e => set('name', e.target.value)} />
@@ -241,7 +236,11 @@ export default function Staff() {
               ) : form.role !== 'super_admin' ? (
                 <Select label="Assign to Mart *" value={form.martId} onChange={e => set('martId', e.target.value)}>
                   <option value="">Select Mart</option>
-                  {marts.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                  {marts.map(m => (
+                    <option key={m.id} value={m.id}>
+                      {m.name} {m.mart_code ? `(${m.mart_code})` : ''}
+                    </option>
+                  ))}
                 </Select>
               ) : null}
             </div>
@@ -252,10 +251,9 @@ export default function Staff() {
                <span className="w-4 h-4 bg-gray-200 rounded-full flex items-center justify-center text-[8px]">3</span>
                KYC Verification
             </h4>
-            {!editingStaff && <p className="text-[10px] text-red-500 mb-4 font-black tracking-tighter">* BOTH PAN AND AADHAAR ARE REQUIRED FOR REGISTRATION</p>}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <ImageUpload label="PAN Card *" value={form.panImageFile} onChange={file => set('panImageFile', file)} />
-              <ImageUpload label="Aadhaar Card *" value={form.aadhaarImageFile} onChange={file => set('aadhaarImageFile', file)} />
+              <ImageUpload label="PAN Card" value={form.panImageFile} onChange={file => set('panImageFile', file)} />
+              <ImageUpload label="Aadhaar Card" value={form.aadhaarImageFile} onChange={file => set('aadhaarImageFile', file)} />
             </div>
           </section>
         </div>

@@ -24,13 +24,10 @@ export default function BulkJobNotifications() {
     useEffect(() => {
         fetchJobs();
 
-        // Check if there is a way to pass auth token.
-        // Assuming session is handled via cookies by the backend.
         const socket = io(SOCKET_URL, {
+            auth: { token: localStorage.getItem('ksmcm_token') || 'token_in_cookie' },
             withCredentials: true,
             transports: ['websocket']
-            // Note: If backend requires token in handshake, add it here:
-            // auth: { token: localStorage.getItem('token') }
         });
 
         socket.on('bulk_progress', (data) => {
@@ -94,7 +91,7 @@ export default function BulkJobNotifications() {
             </button>
 
             {isOpen && (
-                <div className="absolute right-0 mt-2 w-80 bg-white border border-gray-100 shadow-xl rounded-xl z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+                <div className="absolute left-0 mt-2 w-80 bg-white border border-gray-100 shadow-xl rounded-xl z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
                     <div className="p-3 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
                         <h3 className="text-sm font-bold text-gray-800">Upload Notifications</h3>
                         <button onClick={() => setIsOpen(false)} className="text-gray-400 hover:text-gray-600 text-lg">×</button>
@@ -146,6 +143,27 @@ export default function BulkJobNotifications() {
                                             <div>
                                                 <p className="text-gray-400 mb-1">Errors</p>
                                                 <p className="font-bold text-red-600">{job.failedRows || job.errorCount || 0}</p>
+                                            </div>
+                                        </div>
+
+                                        {/* Dynamic Progress Bar */}
+                                        <div className="mt-3">
+                                            <div className="flex justify-between items-center mb-1 text-[10px] font-semibold text-gray-500">
+                                                <span>Import Progress</span>
+                                                <span className="font-bold text-blue-600">
+                                                    {job.status === 'done' || job.status === 'completed' ? '100' : Math.min(100, Math.max(0, job.percent ?? (job.totalRows > 0 ? Math.round(((job.processedRows || 0) / job.totalRows) * 100) : 0)))}%
+                                                </span>
+                                            </div>
+                                            <div className="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden relative shadow-inner">
+                                                <div 
+                                                    className={`h-full rounded-full transition-all duration-500 ease-out ${
+                                                        job.status === 'done' || job.status === 'completed' ? 'bg-gradient-to-r from-emerald-400 to-green-500' :
+                                                        job.status === 'completed_with_errors' ? 'bg-gradient-to-r from-amber-400 to-orange-500' :
+                                                        job.status === 'failed' ? 'bg-gradient-to-r from-rose-500 to-red-600' :
+                                                        'bg-gradient-to-r from-blue-500 to-indigo-600 animate-pulse'
+                                                    }`}
+                                                    style={{ width: `${job.status === 'done' || job.status === 'completed' ? 100 : Math.min(100, Math.max(0, job.percent ?? (job.totalRows > 0 ? Math.round(((job.processedRows || 0) / job.totalRows) * 100) : 0)))}%` }}
+                                                />
                                             </div>
                                         </div>
 

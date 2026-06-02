@@ -17,9 +17,6 @@ const EMPTY = {
   pincode: '',
   latitude: '',
   longitude: '',
-  manager_name: '',
-  manager_phone: '',
-  manager_email: '',
   capacity_sqft: '',
 }
 
@@ -32,7 +29,6 @@ export default function Warehouses() {
   const [editingWarehouse, setEditingWarehouse] = useState(null)
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState(EMPTY)
-  const [selectedStaffId, setSelectedStaffId] = useState('')
 
   const loadData = async () => {
     setLoading(true)
@@ -58,24 +54,7 @@ export default function Warehouses() {
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
-  // Filter staff to only show warehouse managers
-  const managers = staff.filter(s => s.role === 'warehouse_manager')
-
-  const handleStaffChange = (staffId) => {
-    setSelectedStaffId(staffId)
-    if (!staffId) {
-      set('manager_name', '')
-      set('manager_phone', '')
-      set('manager_email', '')
-      return
-    }
-    const matched = staff.find(s => s.id === staffId)
-    if (matched) {
-      set('manager_name', matched.name)
-      set('manager_phone', matched.phone)
-      set('manager_email', matched.email || '')
-    }
-  }
+  // Staff is loaded to dynamically resolve manager details on the client side
 
   const handleEdit = (w) => {
     setEditingWarehouse(w)
@@ -87,15 +66,8 @@ export default function Warehouses() {
       pincode: w.pincode || '',
       latitude: String(w.latitude ?? ''),
       longitude: String(w.longitude ?? ''),
-      manager_name: w.manager_name || '',
-      manager_phone: w.manager_phone || '',
-      manager_email: w.manager_email || '',
       capacity_sqft: String(w.capacity_sqft ?? ''),
     })
-
-    // Pre-select staff dropdown if name matches
-    const matched = managers.find(m => m.name === w.manager_name && m.phone === w.manager_phone)
-    setSelectedStaffId(matched ? matched.id : '')
 
     setOpen(true)
   }
@@ -103,9 +75,6 @@ export default function Warehouses() {
   const handleSave = async () => {
     if (!form.name || !form.city || !form.state || !form.address || !form.pincode) {
       dispatch(showToast({ message: 'All location details are required', type: 'error' })); return
-    }
-    if (!form.manager_name || !form.manager_phone) {
-      dispatch(showToast({ message: 'Manager name and phone are required (Assign from Staff)', type: 'error' })); return
     }
 
     setSaving(true)
@@ -118,10 +87,10 @@ export default function Warehouses() {
         pincode: form.pincode,
         latitude: form.latitude ? parseFloat(form.latitude) : null,
         longitude: form.longitude ? parseFloat(form.longitude) : null,
-        manager_name: form.manager_name,
-        manager_phone: form.manager_phone,
-        manager_email: form.manager_email || null,
         capacity_sqft: form.capacity_sqft ? parseInt(form.capacity_sqft, 10) : null,
+        manager_name: editingWarehouse ? editingWarehouse.manager_name : null,
+        manager_phone: editingWarehouse ? editingWarehouse.manager_phone : null,
+        manager_email: editingWarehouse ? editingWarehouse.manager_email : null,
       }
 
       const url = editingWarehouse ? `/api/warehouses/${editingWarehouse.warehouse_id}` : '/api/warehouses'
@@ -139,7 +108,6 @@ export default function Warehouses() {
         setOpen(false)
         setForm(EMPTY)
         setEditingWarehouse(null)
-        setSelectedStaffId('')
         loadData()
       } else {
         dispatch(showToast({ message: json.message || 'Operation failed', type: 'error' }))
@@ -187,13 +155,19 @@ export default function Warehouses() {
     },
     {
       key: 'manager', label: 'Manager details',
-      render: r => (
-        <div className="text-[10px] leading-tight">
-          <p className="font-bold text-gray-800">{r.manager_name}</p>
-          <p className="text-gray-500 font-mono mt-0.5">📞 {r.manager_phone}</p>
-          {r.manager_email && <p className="text-gray-400 mt-0.5">✉️ {r.manager_email}</p>}
-        </div>
-      )
+      render: r => {
+        const matchedManager = staff.find(s => s.role === 'warehouse_manager' && s.warehouseId === r.warehouse_id)
+        if (matchedManager) {
+          return (
+            <div className="text-[10px] leading-tight">
+              <p className="font-bold text-gray-800">{matchedManager.name}</p>
+              <p className="text-gray-500 font-mono mt-0.5">📞 {matchedManager.phone}</p>
+              {matchedManager.email && <p className="text-gray-400 mt-0.5">✉️ {matchedManager.email}</p>}
+            </div>
+          )
+        }
+        return <span className="text-[10px] text-gray-400 italic">No manager assigned</span>
+      }
     },
     {
       key: 'location', label: 'Location',
@@ -245,7 +219,7 @@ export default function Warehouses() {
         title="Warehouses"
         subtitle="Manage central warehouses and facility staff assignments"
         action={
-          <Button variant="primary" onClick={() => { setForm(EMPTY); setEditingWarehouse(null); setSelectedStaffId(''); setOpen(true) }}>
+          <Button variant="primary" onClick={() => { setForm(EMPTY); setEditingWarehouse(null); setOpen(true) }}>
             + Add Warehouse
           </Button>
         }
@@ -262,7 +236,7 @@ export default function Warehouses() {
       <Modal
         title={editingWarehouse ? `Edit Warehouse: ${editingWarehouse.name}` : 'Register New Warehouse'}
         open={open}
-        onClose={() => { setOpen(false); setEditingWarehouse(null); setSelectedStaffId(''); setForm(EMPTY) }}
+        onClose={() => { setOpen(false); setEditingWarehouse(null); setForm(EMPTY) }}
         size="lg"
         footer={
           <>
@@ -306,45 +280,7 @@ export default function Warehouses() {
             </div>
           </section>
 
-          {/* Section 3: Manager Assignment */}
-          <section className="bg-gray-50/50 p-6 rounded-2xl border border-gray-100 shadow-sm">
-            <h4 className="text-[10px] font-black text-orange-600 uppercase tracking-widest mb-4 flex items-center gap-2">
-              <span className="w-4 h-4 bg-orange-100 rounded-full flex items-center justify-center text-[8px]">3</span>
-              Assign Warehouse Manager
-            </h4>
-            <div className="grid grid-cols-1 gap-4">
-              <Select
-                label="Select Manager from Staff *"
-                value={selectedStaffId}
-                onChange={e => handleStaffChange(e.target.value)}
-              >
-                <option value="">-- Choose Staff Member --</option>
-                {managers.map(m => (
-                  <option key={m.id} value={m.id}>
-                    {m.name} ({m.phone})
-                  </option>
-                ))}
-              </Select>
-            </div>
-            
-            {/* Auto-filled details */}
-            {form.manager_name && (
-              <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4 bg-white p-4 rounded-xl border border-gray-200/60 shadow-sm animate-in fade-in slide-in-from-top-2 duration-300">
-                <div className="text-[10px]">
-                  <p className="text-gray-400 font-bold uppercase tracking-wider">Manager Name</p>
-                  <p className="text-xs font-bold text-gray-900 mt-1">{form.manager_name}</p>
-                </div>
-                <div className="text-[10px]">
-                  <p className="text-gray-400 font-bold uppercase tracking-wider">Contact Phone</p>
-                  <p className="text-xs font-bold text-gray-900 mt-1">{form.manager_phone}</p>
-                </div>
-                <div className="text-[10px]">
-                  <p className="text-gray-400 font-bold uppercase tracking-wider">Email Address</p>
-                  <p className="text-xs font-bold text-gray-900 mt-1">{form.manager_email || '—'}</p>
-                </div>
-              </div>
-            )}
-          </section>
+
         </div>
       </Modal>
     </div>

@@ -9,15 +9,21 @@ const NAV = [
     { to: '/', label: 'Dashboard', icon: '📊' },
     { to: '/marts', label: 'Marts', icon: '🏬' },
     { to: '/warehouses', label: 'Warehouses', icon: '🏭' },
+    { to: '/warehouse-inventory', label: 'Warehouse Inv', icon: '📦' },
+    { to: '/suppliers', label: 'Suppliers', icon: '👥' },
+    { to: '/purchase-orders', label: 'Purchase Orders', icon: '✉️' },
     { to: '/staff', label: 'Staff', icon: '👥' },
     // { to: '/collections', label: 'Collections', icon: '💰' },
     // { to: '/categories', label: 'Categories', icon: '🗂️' },
     { to: '/products', label: 'Products', icon: '🛍️' },
+    { to: '/variants', label: 'Variants', icon: '🧬' },
+    { to: '/brand-bulk-upload', label: 'Brand Upload', icon: '🏷️' },
+    { to: '/variant-bulk-upload', label: 'Variant Upload', icon: '🧬' },
     { to: '/orders', label: 'Orders', icon: '📦' },
     { to: '/inventory', label: 'Inventory', icon: '📋' },
-    { to: '/drivers', label: 'Drivers', icon: '🚴' },
+    // { to: '/drivers', label: 'Drivers', icon: '🚴' },
     // { to: '/banners', label: 'Banners', icon: '🖼️' },
-    { to: '/sales', label: 'Sales', icon: '💰' },
+    // { to: '/sales', label: 'Sales', icon: '💰' },
     // { to: '/subagents', label: 'Sub Agents', icon: '👥' },
     // { to: '/geo-hierarchy', label: 'Geo Hierarchy', icon: '🌍' },
     // { to: '/mandal-agents', label: 'Mandal Agents', icon: '👥' },
@@ -33,7 +39,7 @@ export default function Sidebar() {
     return (
         <aside className={`${collapsed ? 'w-20' : 'w-60'} bg-white border-r border-gray-100 flex flex-col h-screen sticky top-0 transition-all duration-300 z-50`}>
             {/* Logo */}
-            <div className="p-4 h-16 border-b border-gray-50 flex items-center justify-between overflow-hidden">
+            <div className="p-4 h-16 border-b border-gray-50 flex items-center justify-between">
                 {!collapsed && (
                     <div className="flex items-center gap-2 animate-in fade-in duration-300">
                         <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center text-white font-bold text-sm shadow-sm">K</div>

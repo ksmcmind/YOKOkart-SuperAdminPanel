@@ -21,6 +21,12 @@ import SubAgentManager from './pages/Subagentmanager'
 import GeoHierarchyManager from './pages/GeoHierarchyManager'
 import MandalAgentManager from './pages/Mandalagentmanager'
 import Warehouses from './pages/Warehouses'
+import WarehouseInventory from './pages/WarehouseInventory'
+import BrandBulkUpload from './pages/BrandBulkUpload'
+import VariantBulkUpload from './pages/VariantBulkUpload'
+import Variants from './pages/Variants'
+import Suppliers from './pages/Suppliers'
+import PurchaseOrders from './pages/PurchaseOrders'
 
 // Protected route wrapper
 function Protected({ children }) {
@@ -90,6 +96,9 @@ export default function App() {
       <Route path="/" element={<Protected><Dashboard /></Protected>} />
       <Route path="/marts" element={<Protected><Marts /></Protected>} />
       <Route path="/warehouses" element={<Protected><Warehouses /></Protected>} />
+      <Route path="/warehouse-inventory" element={<Protected><WarehouseInventory /></Protected>} />
+      <Route path="/suppliers" element={<Protected><Suppliers /></Protected>} />
+      <Route path="/purchase-orders" element={<Protected><PurchaseOrders /></Protected>} />
       <Route path="/staff" element={<Protected><Staff /></Protected>} />
       <Route path="/categories" element={<Protected><Categories /></Protected>} />
       <Route path="/products" element={<Protected><Products /></Protected>} />
@@ -99,6 +108,9 @@ export default function App() {
       <Route path="/bulk-upload" element={<Protected><BulkUpload /></Protected>} />
       <Route path="/banners" element={<Protected><BannerManager /></Protected>} />
       <Route path="/sales" element={<Protected><Sales /></Protected>} />
+      <Route path="/brand-bulk-upload" element={<Protected><BrandBulkUpload /></Protected>} />
+      <Route path="/variant-bulk-upload" element={<Protected><VariantBulkUpload /></Protected>} />
+      <Route path="/variants" element={<Protected><Variants /></Protected>} />
       <Route path="*" element={<Navigate to="/" replace />} />
       <Route path="/collections" element={<Protected><Collections /></Protected>} />
       <Route path="/subagents" element={<Protected><SubAgentManager /></Protected>} />

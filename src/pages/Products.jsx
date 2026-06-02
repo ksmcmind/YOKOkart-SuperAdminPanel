@@ -37,16 +37,15 @@ const RETURN_POLICIES = [
 ]
 
 const SCHEMA_FIELDS = [
-  'name', 'brand', 'description', 'category_slug', 'subcategory_slug',
+  'product_code', 'name', 'brand_code', 'description', 'category_slug', 'subcategory_slug',
   'search_keywords', 'tags', 'is_active', 'is_veg', 'return_policy',
-  'hsn_code', 'gst_percentage', 'variant_id', 'variant_name',
-  'display_size', 'sku', 'barcode', 'plu_code', 'details', 'images',
-  'variant_is_active',
+  'hsn_code', 'gst_percentage',
 ]
 
 const FIELD_VALIDATORS = {
+  product_code: v => v?.trim() ? true : 'Required',
   name: v => v?.trim() ? true : 'Required',
-  brand: v => v?.trim() ? true : 'Required',
+  brand_code: v => v?.trim() ? true : 'Required',
   category_slug: v => v?.trim() ? true : 'Required',
 }
 
@@ -141,8 +140,13 @@ function FilterBar({ draft, setDraft, onSearch, onReset, categories, loading }) 
     return () => document.removeEventListener('mousedown', clickOut)
   }, [])
 
-  const handleSelect = (val) => {
-    set('search', val)
+  const handleSelect = (s) => {
+    if (s.is_brand) {
+      set('brand', s.brand)
+      set('search', '')
+    } else {
+      set('search', s.name)
+    }
     setShowSuggest(false)
     // Delay slightly to let state update before committing
     setTimeout(onSearch, 50)
@@ -182,16 +186,16 @@ function FilterBar({ draft, setDraft, onSearch, onReset, categories, loading }) 
                 suggestions.map((s, i) => (
                   <button
                     key={i}
-                    onClick={() => handleSelect(s.name)}
+                    onClick={() => handleSelect(s)}
                     className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-primary-50 border-b border-gray-50 last:border-none flex items-center justify-between transition-colors"
                   >
                     <div className="flex items-center gap-3">
-                      <svg className="w-3.5 h-3.5 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                      </svg>
-                      <span className="font-medium truncate max-w-[150px] sm:max-w-[200px]">{s.name}</span>
+                      <span className="text-sm">{s.is_brand ? '🏷️' : '🔍'}</span>
+                      <span className="font-semibold truncate max-w-[150px] sm:max-w-[200px]">{s.name}</span>
                     </div>
-                    {s.brand && (
+                    {s.is_brand ? (
+                      <span className="text-[9px] font-extrabold text-primary-600 bg-primary-50 px-2 py-0.5 rounded-full uppercase tracking-wider">Brand</span>
+                    ) : s.brand && (
                       <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{s.brand}</span>
                     )}
                   </button>
@@ -219,6 +223,7 @@ function FilterBar({ draft, setDraft, onSearch, onReset, categories, loading }) 
 
       {expanded && (
         <div className="px-3 pb-4 pt-1 border-t border-gray-50 bg-gray-50/30 grid grid-cols-1 md:grid-cols-4 gap-4 animate-in fade-in slide-in-from-top-2 duration-200">
+          {/* Category filters commented out as requested
           <div className="space-y-1.5">
             <label className="text-[10px] font-bold text-gray-400 uppercase ml-1">Category</label>
             <Select value={draft.categorySlug} onChange={e => { set('categorySlug', e.target.value); set('subcategorySlug', '') }} className="bg-white border-gray-200">
@@ -236,6 +241,7 @@ function FilterBar({ draft, setDraft, onSearch, onReset, categories, loading }) 
               ))}
             </Select>
           </div>
+          */}
 
           <div className="space-y-1.5">
             <label className="text-[10px] font-bold text-gray-400 uppercase ml-1">Brand</label>
@@ -516,29 +522,15 @@ export default function Products() {
   )
 
   const groupRowsToProducts = (rows) => {
-    const map = new Map()
-    rows.forEach(r => {
-      const key = `${r.name?.trim().toLowerCase()}::${r.brand?.trim().toLowerCase()}`
-      if (!map.has(key)) {
-        map.set(key, {
-          ...r,
-          is_active: r.is_active?.toLowerCase() === 'true',
-          is_veg: r.is_veg?.toLowerCase() === 'true',
-          gst_percentage: parseFloat(r.gst_percentage || 0),
-          search_keywords: r.search_keywords?.split('|').map(t => t.trim()).filter(Boolean) || [],
-          tags: r.tags?.split('|').map(t => t.trim()).filter(Boolean) || [],
-          variants: [],
-        })
-      }
-      map.get(key).variants.push({
-        variant_id: r.variant_id, variant_name: r.variant_name, display_size: r.display_size,
-        sku: r.sku, barcode: r.barcode, plu_code: r.plu_code,
-        details: r.details || '{}',
-        images: r.images?.split('|').map(u => u.trim()).filter(Boolean) || [],
-        is_active: r.variant_is_active?.toLowerCase() === 'true',
-      })
-    })
-    return [...map.values()]
+    return rows.map(r => ({
+      ...r,
+      is_active: r.is_active?.toLowerCase() !== 'false',
+      is_veg: r.is_veg?.toLowerCase() !== 'false',
+      gst_percentage: parseFloat(r.gst_percentage || 0),
+      search_keywords: r.search_keywords?.split('|').map(t => t.trim()).filter(Boolean) || [],
+      tags: r.tags?.split('|').map(t => t.trim()).filter(Boolean) || [],
+      variants: [],
+    }))
   }
 
   const activeChips = getActiveChips(committedFilters, categories)

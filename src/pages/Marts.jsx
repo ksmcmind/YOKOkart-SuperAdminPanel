@@ -38,6 +38,7 @@ const EMPTY = {
   banners: [],
   operational_notice: '',
   warehouse_id: '',
+  razorpay_id: '',
 }
 
 const statusVariant = (status) => ({
@@ -57,6 +58,7 @@ export default function Marts() {
   const [editingMart, setEditingMart] = useState(null)
   const [saving, setSaving] = useState(false)
   const [warehouses, setWarehouses] = useState([])
+  const [staff, setStaff] = useState([])
 
   useEffect(() => { dispatch(fetchMarts()) }, [dispatch])
 
@@ -67,6 +69,13 @@ export default function Marts() {
         if (json.success) setWarehouses(json.data || [])
       })
       .catch(err => console.error('Failed to load warehouses:', err))
+
+    fetch('/api/staff')
+      .then(res => res.json())
+      .then(json => {
+        if (json.success) setStaff(json.data || [])
+      })
+      .catch(err => console.error('Failed to load staff:', err))
   }, [])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
@@ -92,7 +101,7 @@ export default function Marts() {
       serviceRadius: String(mart.service_radius || 5000),
       minOrderValue: String(mart.min_order_value || 99),
       deliveryFee: String(mart.delivery_fee || 20),
-      freeDeliveryAbove: String(mart.free_delivery_above || 299),  // ✅ FIX: was mart.free_delivery_above directly
+      freeDeliveryAbove: String(mart.free_delivery_above || 299),
       gstPercentage: String(mart.gst_percentage || 0),
       openingTime: mart.opening_time?.slice(0, 5) || '08:00',
       closingTime: mart.closing_time?.slice(0, 5) || '22:00',
@@ -100,6 +109,7 @@ export default function Marts() {
         ? mart.coverage_pincodes.join(', ')
         : '',
       warehouse_id: mart.warehouse_id || '',
+      razorpay_id: mart.razorpay_id || '',
     })
     setModalOpen(true)
   }
@@ -107,10 +117,6 @@ export default function Marts() {
   const handleSave = async () => {
     if (!form.name || !form.phone || !form.lat || !form.lng) {
       dispatch(showToast({ message: 'Name, Phone, and Coordinates are required', type: 'error' }))
-      return
-    }
-    if (!editingMart && (!form.logo || !form.banner)) {
-      dispatch(showToast({ message: 'Mart Logo and Hero Banner are mandatory for new marts', type: 'error' }))
       return
     }
 
@@ -143,6 +149,7 @@ export default function Marts() {
         ? form.coveragePincodes.split(',').map(s => s.trim()).filter(Boolean)
         : [],
       warehouse_id: form.warehouse_id || null,
+      razorpay_id: form.razorpay_id || null,
     }
 
     const action = editingMart
@@ -186,6 +193,22 @@ export default function Marts() {
       )
     },
     {
+      key: 'manager', label: 'Manager details',
+      render: r => {
+        const matchedManager = staff.find(s => (s.role === 'manager' || s.role === 'mart_admin') && s.martId === r.id)
+        if (matchedManager) {
+          return (
+            <div className="text-[10px] leading-tight">
+              <p className="font-bold text-gray-800">{matchedManager.name}</p>
+              <p className="text-gray-500 font-mono mt-0.5">📞 {matchedManager.phone}</p>
+              {matchedManager.email && <p className="text-gray-400 mt-0.5">✉️ {matchedManager.email}</p>}
+            </div>
+          )
+        }
+        return <span className="text-[10px] text-gray-400 italic">No manager assigned</span>
+      }
+    },
+    {
       key: 'logistics', label: 'Financials', render: r => (
         <div className="text-[10px] leading-tight">
           <p className="text-gray-600">Min Order: <span className="font-bold text-gray-800">₹{r.min_order_value}</span></p>
@@ -194,15 +217,25 @@ export default function Marts() {
       )
     },
     {
-      key: 'location', label: 'Location', render: r => {
+      key: 'location', label: 'Location', render: r => (
+        <div className="text-[10px] leading-tight text-gray-500 font-medium uppercase tracking-tighter">
+          <p className="text-gray-700 font-bold">{r.city}</p>
+          <p className="mt-0.5">{r.pincode}</p>
+        </div>
+      )
+    },
+    {
+      key: 'warehouse', label: 'Warehouse', render: r => {
         const whMatched = warehouses.find(w => w.warehouse_id === r.warehouse_id);
-        return (
-          <div className="text-[10px] leading-tight text-gray-500 font-medium uppercase tracking-tighter">
-            <p className="text-gray-700 font-bold">{r.city}</p>
-            <p>{r.pincode}</p>
-            {whMatched && <p className="text-primary-600 font-semibold mt-0.5">🏭 {whMatched.name}</p>}
-          </div>
-        );
+        if (whMatched) {
+          return (
+            <div className="text-[10px] leading-tight py-1 flex items-center gap-1.5 font-semibold text-primary-600">
+              <span className="text-sm shrink-0">🏭</span>
+              <span className="truncate max-w-[120px]">{whMatched.name}</span>
+            </div>
+          );
+        }
+        return <span className="text-[10px] text-gray-400 italic">No warehouse linked</span>;
       }
     },
     {
@@ -240,7 +273,12 @@ export default function Marts() {
         title="Marts"
         subtitle="Manage dark store infrastructure"
         action={
-          <Button variant="primary" onClick={() => { setForm(EMPTY); setEditingMart(null); setModalOpen(true) }}>
+          <Button variant="primary" onClick={() => {
+            const randomRazorpayId = 'acc_' + Math.random().toString(36).substring(2, 16).toUpperCase();
+            setForm({ ...EMPTY, razorpay_id: randomRazorpayId });
+            setEditingMart(null);
+            setModalOpen(true);
+          }}>
             + Add New Mart
           </Button>
         }
@@ -318,8 +356,8 @@ export default function Marts() {
               Branding & Media
             </h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <ImageInput label="Mart Logo *" value={form.logo} onChange={v => set('logo', v)} />
-              <ImageInput label="Hero Banner *" value={form.banner} onChange={v => set('banner', v)} />
+              <ImageInput label="Mart Logo" value={form.logo} onChange={v => set('logo', v)} />
+              <ImageInput label="Hero Banner" value={form.banner} onChange={v => set('banner', v)} />
             </div>
             <div className="mt-8 border-t border-gray-100 pt-6">
               <div className="flex justify-between items-center mb-4">
@@ -366,9 +404,10 @@ export default function Marts() {
               <Input label="Closing Time" type="time" value={form.closingTime} onChange={e => set('closingTime', e.target.value)} />
               <Input label="GST Percentage (%)" type="number" value={form.gstPercentage} onChange={e => set('gstPercentage', e.target.value)} />
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
               <Input label="GSTIN" placeholder="GST Registration Number" value={form.gstin} onChange={e => set('gstin', e.target.value)} />
               <Input label="Operational Notice" placeholder="e.g. Closed for maintenance" value={form.operational_notice} onChange={e => set('operational_notice', e.target.value)} />
+              <Input label="Razorpay ID (Franchise)" placeholder="acc_XXXXXXXXXXXXXX" value={form.razorpay_id} onChange={e => set('razorpay_id', e.target.value)} />
             </div>
           </section>
 

@@ -48,15 +48,16 @@ const UNITS = ['kg', 'g', 'l', 'ml', 'pcs', 'dozen']
 const USER_TXN_TYPES = ['restock', 'sale', 'return', 'damage', 'expired', 'theft', 'adjustment', 'transfer', 'opening_stock']
 
 const SCHEMA_FIELDS = [
-    'product_id', 'variant_id', 'sale_price', 'mrp',
+    'product_code', 'variant_code', 'sale_price', 'cogs', 'mrp',
     'stock_qty', 'stock_unit', 'low_stock_alert',
-    'expiry_date', 'batch_number', 'aisle_location', 'is_active', 'type'
+    'expiry_date', 'batch_number', 'aisle_location', 'is_active',
 ]
 
 const FIELD_VALIDATORS = {
     product_id: v => /^[a-f0-9]{24}$/i.test((v || '').trim()) || 'must be 24-char hex ObjectId',
     variant_id: v => (v || '').trim().length > 0 && v.length <= 50 || 'required, max 50 chars',
     sale_price: v => { const n = parseFloat(v); if (isNaN(n)) return 'must be a number'; if (n < 0) return 'must be >= 0'; return true },
+    cogs: v => { const n = parseFloat(v); if (isNaN(n)) return 'must be a number'; if (n < 0) return 'must be >= 0'; return true },
     mrp: v => { const n = parseFloat(v); if (isNaN(n)) return 'must be a number'; if (n < 0) return 'must be >= 0'; return true },
     stock_qty: v => { const n = parseFloat(v); if (isNaN(n)) return 'must be a number'; if (n < 0) return 'must be >= 0'; return true },
     stock_unit: v => UNITS.includes((v || '').toLowerCase().trim()) || `must be one of: ${UNITS.join(', ')}`,
@@ -65,14 +66,12 @@ const FIELD_VALIDATORS = {
     batch_number: v => { if (!v || !v.trim()) return true; return v.length <= 50 || 'max 50 chars' },
     aisle_location: v => { if (!v || !v.trim()) return true; return v.length <= 50 || 'max 50 chars' },
     is_active: v => ['true', 'false'].includes((v || '').toLowerCase().trim()) || 'must be "true" or "false"',
-    type: v => USER_TXN_TYPES.includes((v || '').toLowerCase().trim()) || `must be one of: ${USER_TXN_TYPES.join(', ')}`,
-
 }
 
 // ── Template generators ───────────────────────────────────────────────────────
 
-const SAMPLE_ROW = ['64f1a2b3c4d5e6f7a8b9c0d1', 'VID-AMUL-500', '49.00', '55.00', '100', 'pcs', '10', '2026-12-31', 'BATCH-001', 'A3-Shelf2', 'true']
-const SAMPLE_ROW_2 = ['64f1a2b3c4d5e6f7a8b9c0d2', 'VID-TATA-1KG', '22.00', '24.00', '50', 'kg', '5', '', '', 'B1-Shelf1', 'true']
+const SAMPLE_ROW = ['64f1a2b3c4d5e6f7a8b9c0d1', 'VID-AMUL-500', '49.00', '40.00', '55.00', '100', 'pcs', '10', '2026-12-31', 'BATCH-001', 'A3-Shelf2', 'true']
+const SAMPLE_ROW_2 = ['64f1a2b3c4d5e6f7a8b9c0d2', 'VID-TATA-1KG', '22.00', '18.00', '24.00', '50', 'kg', '5', '', '', 'B1-Shelf1', 'true']
 
 const downloadCSVTemplate = () => {
     const comments = [
@@ -113,6 +112,7 @@ const EMPTY_FILTERS = {
     is_active: '',
     low_stock_only: '',
     out_of_stock: '',
+    expiring_soon: '',
     min_sale_price: '',
     max_sale_price: '',
     expiry_before: '',
@@ -175,6 +175,7 @@ const STOCK_STATUS_OPTIONS = [
     { value: 'inactive', label: 'Inactive' },
     { value: 'low_stock', label: 'Low Stock' },
     { value: 'out_of_stock', label: 'Out of Stock' },
+    { value: 'expiring_soon', label: 'Expiring Soon' },
 ]
 
 function getStockStatusValue(f) {
@@ -182,6 +183,7 @@ function getStockStatusValue(f) {
     if (f.low_stock_only === 'true') return 'low_stock'
     if (f.is_active === 'false') return 'inactive'
     if (f.is_active === 'true') return 'active'
+    if (f.expiring_soon === 'true') return 'expiring_soon'
     return ''
 }
 
@@ -203,17 +205,61 @@ function getActiveChips(f) {
 }
 
 // FilterBar owns its own draft. The parent only sees committed values via onSearch.
-function FilterBar({ committedFilters, onSearch, onReset, loading }) {
+function FilterBar({ committedFilters, onSearch, onReset, loading, martId }) {
     const [draft, setDraft] = useState(committedFilters)
     const [expanded, setExpanded] = useState(false)
+    const [suggestions, setSuggestions] = useState([])
+    const [showSuggestions, setShowSuggestions] = useState(false)
+    const containerRef = useRef(null)
 
     // Sync draft when parent resets
     useEffect(() => { setDraft(committedFilters) }, [committedFilters])
 
+    // Close suggestions when clicking outside
+    useEffect(() => {
+        const handler = (e) => {
+            if (containerRef.current && !containerRef.current.contains(e.target)) {
+                setShowSuggestions(false)
+            }
+        }
+        document.addEventListener('click', handler)
+        return () => document.removeEventListener('click', handler)
+    }, [])
+
+    // Debounced query suggestions from backend autocomplete API
+    useEffect(() => {
+        if (!martId || !draft.search || draft.search.trim().length < 2) {
+            setSuggestions([])
+            return
+        }
+
+        const delayDebounce = setTimeout(async () => {
+            try {
+                const res = await api.get(`/inventory/autocomplete?martId=${encodeURIComponent(martId)}&q=${encodeURIComponent(draft.search)}`)
+                if (res.success) {
+                    setSuggestions(res.data || [])
+                    setShowSuggestions(true)
+                }
+            } catch (err) {
+                console.error('Failed to load autocomplete suggestions:', err)
+            }
+        }, 300)
+
+        return () => clearTimeout(delayDebounce)
+    }, [draft.search, martId])
+
     const set = (k, v) => setDraft(f => ({ ...f, [k]: v }))
 
-    const commit = () => onSearch({ ...draft, page: 1 })
-    const reset = () => { setDraft(EMPTY_FILTERS); onReset() }
+    const commit = () => {
+        setShowSuggestions(false)
+        onSearch({ ...draft, page: 1 })
+    }
+    const reset = () => {
+        setSuggestions([])
+        setShowSuggestions(false)
+        setDraft(EMPTY_FILTERS)
+        onReset()
+    }
     const onEnter = e => { if (e.key === 'Enter') commit() }
 
     const chips = getActiveChips(committedFilters) // from committed, not draft
@@ -224,6 +270,7 @@ function FilterBar({ committedFilters, onSearch, onReset, loading }) {
         out_of_stock: v === 'out_of_stock' ? 'true' : '',
         low_stock_only: v === 'low_stock' ? 'true' : '',
         is_active: v === 'active' ? 'true' : v === 'inactive' ? 'false' : '',
+        expiring_soon: v === 'expiring_soon' ? 'true' : '',
     }))
 
     return (
@@ -231,17 +278,60 @@ function FilterBar({ committedFilters, onSearch, onReset, loading }) {
 
             {/* Top bar */}
             <div className="flex gap-2 p-3">
-                <div className="relative flex-1 min-w-0">
+                <div ref={containerRef} className="relative flex-1 min-w-0">
                     <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                     </svg>
                     <input
                         value={draft.search}
                         onChange={e => set('search', e.target.value)}
+                        onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true) }}
                         onKeyDown={onEnter}
                         placeholder="Search product, variant, batch, aisle…"
                         className="w-full text-xs pl-8 pr-3 py-2.5 border border-gray-200 rounded-xl focus:ring-4 focus:ring-green-500/10 focus:border-green-500 focus:outline-none transition-all bg-gray-50 focus:bg-white placeholder-gray-400"
                     />
+
+                    {/* Autocomplete Suggestions Overlay */}
+                    {showSuggestions && suggestions.length > 0 && (
+                        <div className="absolute left-0 z-50 w-full mt-1.5 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto overflow-hidden divide-y divide-gray-100/60 animate-fadeIn">
+                            {suggestions.map((s, idx) => (
+                                <button
+                                    key={idx}
+                                    type="button"
+                                    onClick={() => {
+                                        const searchTerm = s.product_name || s.product_code;
+                                        set('search', searchTerm);
+                                        setShowSuggestions(false);
+                                        onSearch({ ...draft, search: searchTerm, page: 1 });
+                                    }}
+                                    className="w-full text-left px-4 py-2.5 hover:bg-green-50/50 flex flex-col gap-0.5 transition-colors focus:bg-green-50/50 focus:outline-none cursor-pointer"
+                                >
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-xs font-bold text-gray-800 line-clamp-1">
+                                            {s.product_name || s.name}
+                                        </span>
+                                        <span className="text-[10px] font-mono text-gray-400 font-bold shrink-0">
+                                            #{s.product_code}
+                                        </span>
+                                    </div>
+                                    <div className="flex flex-wrap items-center gap-1.5 text-[9px] text-gray-500 font-bold">
+                                        {s.brand_name && (
+                                            <span className="bg-gray-100 text-gray-600 px-1 rounded uppercase tracking-wider text-[8px] font-extrabold border border-gray-200">
+                                                🏷️ {s.brand_name}
+                                            </span>
+                                        )}
+                                        {s.variant_code && (
+                                            <span className="bg-blue-50 text-blue-700 px-1 rounded uppercase tracking-wider text-[8px] font-extrabold border border-blue-100">
+                                                Var: {s.variant_code}
+                                            </span>
+                                        )}
+                                        {s.batch_number && <span>📦 Batch: {s.batch_number}</span>}
+                                        {s.aisle_location && <span>📍 Aisle: {s.aisle_location}</span>}
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
+                    )}
                 </div>
 
                 {/* Sort — desktop */}
@@ -531,7 +621,7 @@ function RestockModal({ open, onClose, item, martId }) {
     }
 
     return (
-        <Modal title={`Restock — ${item.mongo_product_id} / ${item.variant_id}`}
+        <Modal title={`Restock — ${item.product_name || 'Stock Product'} [${item.product_code || item.mongo_product_id} / ${item.variant_code || item.variant_id}]`}
             open={open} onClose={onClose} size="md"
             footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button><Button variant="primary" loading={restocking} onClick={handleSubmit}>Update Stock</Button></>}>
             <div className="space-y-5">
@@ -622,7 +712,7 @@ function HistoryModal({ open, onClose, item }) {
     const net = txns.reduce((s, t) => s + parseFloat(t.qty_change || 0), 0)
 
     return (
-        <Modal title={`Stock History — ${item.mongo_product_id} / ${item.variant_id}`}
+        <Modal title={`Stock History — ${item.product_name || 'Stock Product'} [${item.product_code || item.mongo_product_id} / ${item.variant_code || item.variant_id}]`}
             open={open} onClose={onClose} size="xl"
             footer={<Button variant="secondary" onClick={onClose}>Close</Button>}>
 
@@ -759,6 +849,78 @@ export default function Inventory() {
     const [restockItem, setRestockItem] = useState(null)
     const [historyItem, setHistoryItem] = useState(null)
     const [form, setForm] = useState(EMPTY_FORM)
+    const [activeTab, setActiveTab] = useState('inventory')
+    const [martBatches, setMartBatches] = useState([])
+    const [martBatchesLoading, setMartBatchesLoading] = useState(false)
+
+    // Fetch batches when batch tab is active
+    useEffect(() => {
+        if (!martId || activeTab !== 'batches') return
+        setMartBatchesLoading(true)
+        api.get(`/inventory/batches?martId=${encodeURIComponent(martId)}`)
+            .then(res => {
+                if (res.success) setMartBatches(res.data || [])
+                else setMartBatches([])
+            })
+            .catch(err => { console.error('Failed to fetch batches:', err); setMartBatches([]) })
+            .finally(() => setMartBatchesLoading(false))
+    }, [martId, activeTab])
+
+    const batchColumns = [
+        {
+            key: 'product', label: 'Product',
+            render: r => (
+                <div>
+                    <p className="font-bold text-gray-900 text-xs leading-tight">{r.product_name || 'Unknown'}</p>
+                    <span className="bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded font-mono text-[10px] font-bold border border-gray-200">#{r.product_code}</span>
+                </div>
+            ),
+        },
+        {
+            key: 'variant', label: 'Variant',
+            render: r => (
+                <div className="flex items-center gap-1.5">
+                    <span className="bg-blue-50 text-blue-700 text-[9px] font-extrabold px-1.5 py-0.5 rounded border border-blue-100 uppercase">
+                        {r.variant_code || 'default'}
+                    </span>
+                    {r.variant_name && <span className="text-[10px] text-gray-500">{r.variant_name}</span>}
+                </div>
+            ),
+        },
+        { key: 'batch_number', label: 'Batch #', render: r => <span className="font-mono text-xs font-bold text-gray-700">{r.batch_number || '—'}</span> },
+        {
+            key: 'stock', label: 'Available',
+            render: r => <span className="font-bold text-gray-800 text-xs">{r.stock_qty} <span className="text-[9px] text-gray-500 uppercase">{r.stock_unit}</span></span>,
+        },
+        {
+            key: 'reserved', label: 'Reserved',
+            render: r => <span className="font-bold text-yellow-600 text-xs">{r.reserved_qty ?? 0}</span>,
+        },
+        {
+            key: 'dispatched', label: 'Dispatched',
+            render: r => <span className="font-bold text-blue-600 text-xs">{r.dispatched_qty ?? 0}</span>,
+        },
+        {
+            key: 'expiry', label: 'Expiry',
+            render: r => {
+                if (!r.expiry_date) return <span className="text-gray-400 text-xs">—</span>
+                const d = new Date(r.expiry_date)
+                const diff = Math.ceil((d - new Date()) / (1000 * 60 * 60 * 24))
+                const color = diff < 0 ? 'text-rose-700 font-black' : diff <= 60 ? 'text-orange-600 font-bold' : 'text-gray-700'
+                return <span className={`text-xs ${color}`}>{d.toLocaleDateString('en-GB')}{diff <= 60 && <span className="ml-1 text-[9px]">{diff < 0 ? '🚨 EXP' : `🚨 ${diff}d`}</span>}</span>
+            },
+        },
+        {
+            key: 'pricing', label: 'Sale / MRP',
+            render: r => (
+                <div className="text-[11px]">
+                    <span className="font-bold text-primary-600">₹{r.sale_price}</span>
+                    <span className="text-gray-400 line-through ml-1">₹{r.mrp}</span>
+                </div>
+            ),
+        },
+        { key: 'aisle', label: 'Aisle', render: r => <span className="text-xs text-gray-600">{r.aisle_location || '—'}</span> },
+    ]
 
     // Initial load — full list for stats + summary widget
     useEffect(() => {
@@ -819,12 +981,26 @@ export default function Inventory() {
 
     const columns = [
         {
-            key: 'product', label: 'Product ID',
+            key: 'product', label: 'Product Code',
             render: r => <span className="bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded font-mono text-[10px] font-bold border border-gray-200">#{r.product_code}</span>,
         },
         {
-            key: 'variant', label: 'Variant',
-            render: r => <Badge variant="blue" size="xs">{r.variant_id}</Badge>,
+            key: 'details', label: 'Product & Variant Details',
+            render: r => (
+                <div>
+                    <p className="font-bold text-gray-900 leading-tight text-xs">{r.product_name || 'Unknown Product'}</p>
+                    <div className="flex items-center gap-1.5 mt-1">
+                        <span className="bg-blue-50 text-blue-700 text-[9px] font-extrabold px-1.5 py-0.5 rounded border border-blue-100 uppercase">
+                            Var: {r.variant_code || 'default'}
+                        </span>
+                        {r.variant_name && (
+                            <span className="text-[10px] font-medium text-gray-500 leading-normal">
+                                {r.variant_name}
+                            </span>
+                        )}
+                    </div>
+                </div>
+            )
         },
         {
             key: 'cogs', label: 'COGS',
@@ -890,18 +1066,53 @@ export default function Inventory() {
         },
         {
             key: 'dates', label: 'Dates',
-            render: r => (
-                <div className="flex items-center gap-3 text-[10px]">
-                    <div className="flex items-center gap-1">
-                        <span className="text-gray-400 font-bold text-[9px] uppercase">Exp:</span>
-                        <EditableCell value={r.expiry_date?.slice(0, 10) || 'SET'} type="date" onSave={v => handleInlineUpdate(r.id, 'expiry_date', v)} />
+            render: r => {
+                const parseDate = (dStr) => {
+                    if (!dStr) return null;
+                    const parts = dStr.slice(0, 10).split('-');
+                    if (parts.length === 3) {
+                        if (parts[2].length === 4) return new Date(parts[2], parts[1] - 1, parts[0]);
+                        if (parts[0].length === 4) return new Date(parts[0], parts[1] - 1, parts[2]);
+                    }
+                    return new Date(dStr);
+                };
+                const expDate = parseDate(r.expiry_date);
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                if (expDate) expDate.setHours(0, 0, 0, 0);
+                const diffTime = expDate ? expDate - today : null;
+                const diffDays = diffTime !== null ? Math.ceil(diffTime / (1000 * 60 * 60 * 24)) : null;
+
+                const isNearExpiry = diffDays !== null && diffDays <= 60;
+                const isExpired = diffDays !== null && diffDays < 0;
+
+                let expColor = "text-gray-700";
+                if (isExpired) {
+                    expColor = "text-rose-700 font-black animate-pulse bg-rose-50 border border-rose-100 rounded px-1.5 py-0.5 shadow-[0_0_8px_rgba(244,63,94,0.4)]";
+                } else if (isNearExpiry) {
+                    expColor = "text-rose-600 font-extrabold animate-pulse bg-rose-50 border border-rose-100 rounded px-1.5 py-0.5 shadow-[0_0_8px_rgba(244,63,94,0.4)]";
+                }
+
+                return (
+                    <div className="flex flex-col gap-1 text-[10px]">
+                        <div className="flex items-center gap-1.5">
+                            <span className="text-gray-400 font-bold text-[9px] uppercase">Exp:</span>
+                            <span className={expColor}>
+                                <EditableCell value={r.expiry_date?.slice(0, 10) || 'SET'} type="date" onSave={v => handleInlineUpdate(r.id, 'expiry_date', v)} />
+                            </span>
+                            {isNearExpiry && (
+                                <span className="text-[8px] font-black text-rose-600 animate-pulse">
+                                    {isExpired ? "🚨 EXP" : `🚨 ${diffDays}d`}
+                                </span>
+                            )}
+                        </div>
+                        <div className="flex items-center gap-1">
+                            <span className="text-gray-400 font-bold text-[9px] uppercase">In:</span>
+                            <span className="text-gray-600 font-medium">{r.last_restocked_at ? new Date(r.last_restocked_at).toLocaleDateString('en-GB') : '—'}</span>
+                        </div>
                     </div>
-                    <div className="flex items-center gap-1">
-                        <span className="text-gray-400 font-bold text-[9px] uppercase">In:</span>
-                        <span className="text-gray-600 font-medium">{r.last_restocked_at ? new Date(r.last_restocked_at).toLocaleDateString('en-GB') : '—'}</span>
-                    </div>
-                </div>
-            ),
+                );
+            }
         },
         {
             key: 'status', label: 'Active',
@@ -967,6 +1178,32 @@ export default function Inventory() {
                 }
             />
 
+            {/* Segmented Tab Switcher */}
+            {martId && (
+                <div className="flex bg-gray-100 p-1 rounded-xl w-fit border border-gray-200">
+                    <button
+                        onClick={() => setActiveTab('inventory')}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all duration-200 ${
+                            activeTab === 'inventory'
+                                ? 'bg-white text-gray-800 shadow-sm'
+                                : 'text-gray-500 hover:text-gray-700'
+                        }`}
+                    >
+                        🎒 Shelf Inventory
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('batches')}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all duration-200 ${
+                            activeTab === 'batches'
+                                ? 'bg-white text-gray-800 shadow-sm'
+                                : 'text-gray-500 hover:text-gray-700'
+                        }`}
+                    >
+                        📦 Supplier Batch Tracking
+                    </button>
+                </div>
+            )}
+
             {/* Stats */}
             {martId && (items.length > 0 || backendSummary) && (
                 <div className="flex gap-3 flex-wrap">
@@ -988,6 +1225,7 @@ export default function Inventory() {
                     onSearch={handleSearch}
                     onReset={handleFilterReset}
                     loading={filteredLoad}
+                    martId={martId}
                 />
             )}
 
@@ -1011,6 +1249,15 @@ export default function Inventory() {
                 <div className="bg-white rounded-xl border border-gray-100 p-10 text-center text-gray-500 font-medium">
                     Please select a mart from the dropdown to view its inventory.
                 </div>
+            ) : activeTab === 'batches' ? (
+                <Grid
+                    columns={batchColumns}
+                    data={martBatches}
+                    loading={martBatchesLoading}
+                    emptyText="No product batches found matching search criteria."
+                    pagination={false}
+                    showSearch={false}
+                />
             ) : (
                 <Grid
                     columns={columns}
@@ -1023,7 +1270,7 @@ export default function Inventory() {
             )}
 
             {/* Pagination */}
-            {martId && <PaginationBar pagination={pagination} onPageChange={handlePageChange} />}
+            {martId && activeTab === 'inventory' && <PaginationBar pagination={pagination} onPageChange={handlePageChange} />}
 
             {/* Add Modal */}
             <Modal title="Add Inventory Item" open={addOpen} onClose={() => setAddOpen(false)} size="lg"
