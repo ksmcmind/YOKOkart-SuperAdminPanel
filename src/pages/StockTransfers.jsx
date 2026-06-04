@@ -36,9 +36,32 @@ export default function StockTransfers() {
   const [createForm, setCreateForm] = useState({
     martId: '',
     productId: '',
+    variantId: '',
     qtyDispatched: '',
     notes: ''
   })
+  
+  const [productSearchText, setProductSearchText] = useState('')
+  const [productDropdownOpen, setProductDropdownOpen] = useState(false)
+  const [selectedProduct, setSelectedProduct] = useState(null)
+
+  // Unique products in warehouse inventory (for product search input)
+  const uniqueInventoryProducts = useMemo(() => {
+    const map = new Map();
+    warehouseInventory.forEach(item => {
+      const prodId = item.product_id;
+      if (!map.has(prodId)) {
+        map.set(prodId, {
+          productId: prodId,
+          productName: item.product_name || item.productName || 'Generic Product',
+          brand: item.brand_name || item.brand || 'Generic',
+          variants: []
+        });
+      }
+      map.get(prodId).variants.push(item);
+    });
+    return Array.from(map.values());
+  }, [warehouseInventory]);
   
   const [receiveForm, setReceiveForm] = useState({
     qtyReceived: ''
@@ -100,7 +123,7 @@ export default function StockTransfers() {
   const fetchWarehouseInventory = async () => {
     if (!selectedWarehouseId) return
     try {
-      const res = await api.get(`/warehouse-inventory/warehouse/${selectedWarehouseId}?limit=200`)
+      const res = await api.get(`/warehouse-inventory/warehouse/${selectedWarehouseId}?limit=5000`)
       if (res.success) {
         setWarehouseInventory(res.data || [])
       }
@@ -157,13 +180,16 @@ export default function StockTransfers() {
         warehouseId: selectedWarehouseId,
         martId: createForm.martId,
         productId: createForm.productId,
+        variantId: createForm.variantId,
         qtyDispatched: qty,
         notes: createForm.notes
       })
       if (res.success) {
         dispatch(showToast({ message: 'Replenishment transfer created and stock reserved!', type: 'success' }))
         setCreateOpen(false)
-        setCreateForm({ martId: '', productId: '', qtyDispatched: '', notes: '' })
+        setCreateForm({ martId: '', productId: '', variantId: '', qtyDispatched: '', notes: '' })
+        setProductSearchText('')
+        setSelectedProduct(null)
         fetchTransfers()
         fetchWarehouseInventory()
       } else {
@@ -346,7 +372,12 @@ export default function StockTransfers() {
         title="Stock Transfers & Replenishments"
         subtitle="Manage outbound warehouse dispatches, allocate cargo items, and confirm inbound mart receipt receipts."
       >
-        <Button variant="primary" onClick={() => setCreateOpen(true)}>
+        <Button variant="primary" onClick={() => {
+          setCreateForm({ martId: '', productId: '', variantId: '', qtyDispatched: '', notes: '' });
+          setProductSearchText('');
+          setSelectedProduct(null);
+          setCreateOpen(true);
+        }}>
           ➕ Create Stock Transfer
         </Button>
       </PageHeader>
@@ -450,25 +481,84 @@ export default function StockTransfers() {
             ))}
           </Select>
 
-          <Select
-            label="Select In-Stock Product *"
-            required
-            value={createForm.productId}
-            onChange={e => setCreateForm(prev => ({ ...prev, productId: e.target.value }))}
-          >
-            <option value="">-- Choose Product --</option>
-            {warehouseInventory.map(item => {
-              const avail = item.available_qty !== undefined ? parseFloat(item.available_qty) : (parseFloat(item.bulk_stock_qty || 0) - parseFloat(item.reserved_qty || 0))
-              const prodName = item.product_name || item.productName || 'Generic SKU'
-              const brandName = item.brand_name || item.brand || 'Generic'
-              const rack = item.asl || item.ASL || 'N/A'
-              return (
-                <option key={item.variant_id || item.id} value={item.product_id} disabled={avail <= 0}>
-                  {prodName} ({brandName}) — Available: {avail} units (ASL: {rack})
-                </option>
-              )
-            })}
-          </Select>
+          <div className="relative">
+            <label className="block text-xs font-bold text-slate-700 mb-1">Select Product *</label>
+            <input
+              type="text"
+              required
+              placeholder="🔍 Search product by name or brand..."
+              value={productSearchText}
+              onChange={(e) => {
+                setProductSearchText(e.target.value);
+                setProductDropdownOpen(true);
+              }}
+              onFocus={() => setProductDropdownOpen(true)}
+              onBlur={() => setTimeout(() => setProductDropdownOpen(false), 200)}
+              className="w-full text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-xl px-3 py-2.5 focus:border-indigo-500 focus:outline-none transition-colors"
+            />
+            {productDropdownOpen && (
+              <div className="absolute left-0 right-0 z-50 bg-white border border-slate-200 rounded-xl shadow-xl max-h-60 overflow-y-auto mt-1 p-1">
+                {uniqueInventoryProducts
+                  .filter(item => {
+                    const q = productSearchText.toLowerCase().trim();
+                    if (!q) return true;
+                    const prodName = item.productName.toLowerCase();
+                    const brandName = item.brand.toLowerCase();
+                    return prodName.includes(q) || brandName.includes(q);
+                  })
+                  .map(item => {
+                    const isSelected = selectedProduct?.productId === item.productId;
+                    return (
+                      <button
+                        key={item.productId}
+                        type="button"
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          setSelectedProduct(item);
+                          setCreateForm(prev => ({
+                            ...prev,
+                            productId: item.productId,
+                            variantId: ''
+                          }));
+                          setProductSearchText(`${item.productName} (${item.brand})`);
+                          setProductDropdownOpen(false);
+                        }}
+                        className={`w-full text-left text-xs font-semibold px-3 py-2 rounded-lg hover:bg-slate-50 transition-colors duration-150 border-b border-slate-100 flex flex-col gap-0.5 text-slate-700 ${isSelected ? 'bg-indigo-50 text-indigo-900' : ''}`}
+                      >
+                        <span className="font-bold">{item.productName} ({item.brand})</span>
+                        <span className="text-[10px] text-slate-500 font-mono">
+                          {item.variants.length} in-stock variant(s)
+                        </span>
+                      </button>
+                    );
+                  })}
+              </div>
+            )}
+          </div>
+
+          {selectedProduct && (
+            <div className="flex flex-col gap-1 mt-1">
+              <label className="text-xs font-bold text-slate-700 mb-1">Select Variant *</label>
+              <select
+                required
+                value={createForm.variantId}
+                onChange={e => setCreateForm(prev => ({ ...prev, variantId: e.target.value }))}
+                className="w-full text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-xl px-3 py-2.5 focus:border-indigo-500 focus:outline-none transition-colors"
+              >
+                <option value="">-- Choose Variant --</option>
+                {selectedProduct.variants.map(v => {
+                  const avail = v.available_qty !== undefined ? parseFloat(v.available_qty) : (parseFloat(v.bulk_stock_qty || 0) - parseFloat(v.reserved_qty || 0));
+                  const rack = v.asl || v.ASL || 'N/A';
+                  const sku = v.variant_sku || v.sku || 'N/A';
+                  return (
+                    <option key={v.variant_id || v.id} value={v.variant_id || v.id} disabled={avail <= 0}>
+                      {v.variant_name || v.variantName || v.sku || 'Default'} (SKU: {sku}) -- Available: {avail} units (ASL: {rack})
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+          )}
 
           <Input
             label="Quantity to Dispatch *"
