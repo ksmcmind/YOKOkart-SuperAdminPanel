@@ -1,5 +1,5 @@
 // src/components/StatCard.jsx
-export default function StatCard({ label, value, icon, color = 'green', sub }) {
+export default function StatCard({ label, value, icon, color = 'green', sub, onClick, className = '' }) {
   const colors = {
     green:  'bg-primary-50  text-primary-600',
     yellow: 'bg-accent-50   text-accent-600',
@@ -9,7 +9,14 @@ export default function StatCard({ label, value, icon, color = 'green', sub }) {
   }
 
   return (
-    <div className="card p-5">
+    <div
+      className={`card p-5 transition-all duration-200 ${
+        onClick
+          ? 'cursor-pointer hover:scale-[1.02] active:scale-[0.98] hover:shadow-md'
+          : ''
+      } ${className}`}
+      onClick={onClick}
+    >
       <div className="flex items-start justify-between">
         <div>
           <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{label}</p>

@@ -24,7 +24,10 @@ export const verifyOtp = createAsyncThunk(
     }
 
     // Note: token is set in HttpOnly cookie by backend
-    localStorage.setItem('ksmcm_user',  JSON.stringify(res.data.user))
+    localStorage.setItem('ksmcm_super_admin_user',  JSON.stringify(res.data.user))
+    if (res.data.token) {
+      localStorage.setItem('ksmcm_super_admin_token', res.data.token)
+    }
     return res.data
   }
 )
@@ -35,10 +38,17 @@ export const getMe = createAsyncThunk(
     try {
       const res = await api.get('/auth/me')
       if (!res.success) throw new Error(res.message)
-      localStorage.setItem('ksmcm_user', JSON.stringify(res.data.user))
+
+      const user = res.data.user
+      if (user.role !== 'super_admin' && user.role !== 'admin') {
+        throw new Error('Access denied. Super Admin/Admin only.')
+      }
+
+      localStorage.setItem('ksmcm_super_admin_user', JSON.stringify(user))
       return res.data
     } catch (err) {
-      localStorage.removeItem('ksmcm_user')
+      localStorage.removeItem('ksmcm_super_admin_user')
+      localStorage.removeItem('ksmcm_super_admin_token')
       return rejectWithValue(err.message)
     }
   }
@@ -50,7 +60,8 @@ export const logout = createAsyncThunk(
     try {
       await api.post('/auth/logout')
     } catch (e) {}
-    localStorage.removeItem('ksmcm_user')
+    localStorage.removeItem('ksmcm_super_admin_user')
+    localStorage.removeItem('ksmcm_super_admin_token')
   }
 )
 
@@ -58,8 +69,8 @@ export const logout = createAsyncThunk(
 const authSlice = createSlice({
   name: 'auth',
   initialState: {
-    user:        JSON.parse(localStorage.getItem('ksmcm_user') || 'null'),
-    isLoggedIn:  !!localStorage.getItem('ksmcm_user'),
+    user:        JSON.parse(localStorage.getItem('ksmcm_super_admin_user') || 'null'),
+    isLoggedIn:  !!localStorage.getItem('ksmcm_super_admin_user'),
     isInitialized: false, // Wait for getMe to finish
     otpSent:     false,
     loading:     false,

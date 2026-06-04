@@ -12,6 +12,7 @@ const NAV = [
     { to: '/warehouse-inventory', label: 'Warehouse Inv', icon: '📦' },
     { to: '/suppliers', label: 'Suppliers', icon: '👥' },
     { to: '/purchase-orders', label: 'Purchase Orders', icon: '✉️' },
+    { to: '/stock-transfers', label: 'Stock Transfers', icon: '🚚' },
     { to: '/staff', label: 'Staff', icon: '👥' },
     // { to: '/collections', label: 'Collections', icon: '💰' },
     // { to: '/categories', label: 'Categories', icon: '🗂️' },

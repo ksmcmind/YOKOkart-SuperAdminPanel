@@ -3,7 +3,7 @@
 // Works correctly with the fixed inventorySlice.js.
 // filteredItems and filteredPagination now always reflect real backend results.
 
-import { useEffect, useState, useRef, useCallback } from 'react'
+import { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import * as XLSX from 'xlsx'
 import {
@@ -113,6 +113,7 @@ const EMPTY_FILTERS = {
     low_stock_only: '',
     out_of_stock: '',
     expiring_soon: '',
+    expired: '',
     min_sale_price: '',
     max_sale_price: '',
     expiry_before: '',
@@ -176,6 +177,7 @@ const STOCK_STATUS_OPTIONS = [
     { value: 'low_stock', label: 'Low Stock' },
     { value: 'out_of_stock', label: 'Out of Stock' },
     { value: 'expiring_soon', label: 'Expiring Soon' },
+    { value: 'expired', label: 'Expired' },
 ]
 
 function getStockStatusValue(f) {
@@ -184,6 +186,7 @@ function getStockStatusValue(f) {
     if (f.is_active === 'false') return 'inactive'
     if (f.is_active === 'true') return 'active'
     if (f.expiring_soon === 'true') return 'expiring_soon'
+    if (f.expired === 'true') return 'expired'
     return ''
 }
 
@@ -208,55 +211,24 @@ function getActiveChips(f) {
 function FilterBar({ committedFilters, onSearch, onReset, loading, martId }) {
     const [draft, setDraft] = useState(committedFilters)
     const [expanded, setExpanded] = useState(false)
-    const [suggestions, setSuggestions] = useState([])
-    const [showSuggestions, setShowSuggestions] = useState(false)
-    const containerRef = useRef(null)
 
     // Sync draft when parent resets
     useEffect(() => { setDraft(committedFilters) }, [committedFilters])
 
-    // Close suggestions when clicking outside
+    // Debounced search on typing
     useEffect(() => {
-        const handler = (e) => {
-            if (containerRef.current && !containerRef.current.contains(e.target)) {
-                setShowSuggestions(false)
-            }
-        }
-        document.addEventListener('click', handler)
-        return () => document.removeEventListener('click', handler)
-    }, [])
-
-    // Debounced query suggestions from backend autocomplete API
-    useEffect(() => {
-        if (!martId || !draft.search || draft.search.trim().length < 2) {
-            setSuggestions([])
-            return
-        }
-
-        const delayDebounce = setTimeout(async () => {
-            try {
-                const res = await api.get(`/inventory/autocomplete?martId=${encodeURIComponent(martId)}&q=${encodeURIComponent(draft.search)}`)
-                if (res.success) {
-                    setSuggestions(res.data || [])
-                    setShowSuggestions(true)
-                }
-            } catch (err) {
-                console.error('Failed to load autocomplete suggestions:', err)
-            }
+        const timer = setTimeout(() => {
+            onSearch({ ...draft, page: 1 })
         }, 300)
-
-        return () => clearTimeout(delayDebounce)
-    }, [draft.search, martId])
+        return () => clearTimeout(timer)
+    }, [draft.search])
 
     const set = (k, v) => setDraft(f => ({ ...f, [k]: v }))
 
     const commit = () => {
-        setShowSuggestions(false)
         onSearch({ ...draft, page: 1 })
     }
     const reset = () => {
-        setSuggestions([])
-        setShowSuggestions(false)
         setDraft(EMPTY_FILTERS)
         onReset()
     }
@@ -271,6 +243,7 @@ function FilterBar({ committedFilters, onSearch, onReset, loading, martId }) {
         low_stock_only: v === 'low_stock' ? 'true' : '',
         is_active: v === 'active' ? 'true' : v === 'inactive' ? 'false' : '',
         expiring_soon: v === 'expiring_soon' ? 'true' : '',
+        expired: v === 'expired' ? 'true' : '',
     }))
 
     return (
@@ -278,60 +251,17 @@ function FilterBar({ committedFilters, onSearch, onReset, loading, martId }) {
 
             {/* Top bar */}
             <div className="flex gap-2 p-3">
-                <div ref={containerRef} className="relative flex-1 min-w-0">
+                <div className="relative flex-1 min-w-0">
                     <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                     </svg>
                     <input
                         value={draft.search}
                         onChange={e => set('search', e.target.value)}
-                        onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true) }}
                         onKeyDown={onEnter}
                         placeholder="Search product, variant, batch, aisle…"
                         className="w-full text-xs pl-8 pr-3 py-2.5 border border-gray-200 rounded-xl focus:ring-4 focus:ring-green-500/10 focus:border-green-500 focus:outline-none transition-all bg-gray-50 focus:bg-white placeholder-gray-400"
                     />
-
-                    {/* Autocomplete Suggestions Overlay */}
-                    {showSuggestions && suggestions.length > 0 && (
-                        <div className="absolute left-0 z-50 w-full mt-1.5 bg-white border border-gray-200 rounded-xl shadow-xl max-h-60 overflow-y-auto overflow-hidden divide-y divide-gray-100/60 animate-fadeIn">
-                            {suggestions.map((s, idx) => (
-                                <button
-                                    key={idx}
-                                    type="button"
-                                    onClick={() => {
-                                        const searchTerm = s.product_name || s.product_code;
-                                        set('search', searchTerm);
-                                        setShowSuggestions(false);
-                                        onSearch({ ...draft, search: searchTerm, page: 1 });
-                                    }}
-                                    className="w-full text-left px-4 py-2.5 hover:bg-green-50/50 flex flex-col gap-0.5 transition-colors focus:bg-green-50/50 focus:outline-none cursor-pointer"
-                                >
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-xs font-bold text-gray-800 line-clamp-1">
-                                            {s.product_name || s.name}
-                                        </span>
-                                        <span className="text-[10px] font-mono text-gray-400 font-bold shrink-0">
-                                            #{s.product_code}
-                                        </span>
-                                    </div>
-                                    <div className="flex flex-wrap items-center gap-1.5 text-[9px] text-gray-500 font-bold">
-                                        {s.brand_name && (
-                                            <span className="bg-gray-100 text-gray-600 px-1 rounded uppercase tracking-wider text-[8px] font-extrabold border border-gray-200">
-                                                🏷️ {s.brand_name}
-                                            </span>
-                                        )}
-                                        {s.variant_code && (
-                                            <span className="bg-blue-50 text-blue-700 px-1 rounded uppercase tracking-wider text-[8px] font-extrabold border border-blue-100">
-                                                Var: {s.variant_code}
-                                            </span>
-                                        )}
-                                        {s.batch_number && <span>📦 Batch: {s.batch_number}</span>}
-                                        {s.aisle_location && <span>📍 Aisle: {s.aisle_location}</span>}
-                                    </div>
-                                </button>
-                            ))}
-                        </div>
-                    )}
                 </div>
 
                 {/* Sort — desktop */}
@@ -843,6 +773,67 @@ export default function Inventory() {
     const summaryLoading = useSelector(selectInventorySummaryLoading)
     const saving = useSelector(selectInventorySaving)
 
+    // Helper functions for sorting/styling expired & expiring soon items
+    const parseDate = (dStr) => {
+        if (!dStr) return null;
+        const parts = dStr.slice(0, 10).split('-');
+        if (parts.length === 3) {
+            if (parts[2].length === 4) return new Date(parts[2], parts[1] - 1, parts[0]);
+            if (parts[0].length === 4) return new Date(parts[0], parts[1] - 1, parts[2]);
+        }
+        return new Date(dStr);
+    };
+
+    const getExpiryDiffDays = (expiryDate) => {
+        if (!expiryDate) return null;
+        const expDate = parseDate(expiryDate);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        if (expDate) expDate.setHours(0, 0, 0, 0);
+        const diffTime = expDate - today;
+        return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    };
+
+    const checkIsExpired = (expiryDate) => {
+        const diff = getExpiryDiffDays(expiryDate);
+        return diff !== null && diff < 0;
+    };
+
+    const checkIsExpiringSoon = (expiryDate) => {
+        const diff = getExpiryDiffDays(expiryDate);
+        return diff !== null && diff >= 0 && diff <= 60;
+    };
+
+    const sortedFilteredItems = useMemo(() => {
+        return [...filteredItems].sort((a, b) => {
+            const aExpired = checkIsExpired(a.expiry_date);
+            const bExpired = checkIsExpired(b.expiry_date);
+            if (aExpired && !bExpired) return -1;
+            if (!aExpired && bExpired) return 1;
+            if (aExpired && bExpired) {
+                if (a.expiry_date && b.expiry_date) return new Date(a.expiry_date) - new Date(b.expiry_date);
+                if (a.expiry_date) return -1;
+                if (b.expiry_date) return 1;
+            }
+
+            const aExpiring = checkIsExpiringSoon(a.expiry_date);
+            const bExpiring = checkIsExpiringSoon(b.expiry_date);
+            if (aExpiring && !bExpiring) return -1;
+            if (!aExpiring && bExpiring) return 1;
+            if (aExpiring && bExpiring) {
+                if (a.expiry_date && b.expiry_date) return new Date(a.expiry_date) - new Date(b.expiry_date);
+                if (a.expiry_date) return -1;
+                if (b.expiry_date) return 1;
+            }
+
+            if (a.expiry_date && b.expiry_date) return new Date(a.expiry_date) - new Date(b.expiry_date);
+            if (a.expiry_date) return -1;
+            if (b.expiry_date) return 1;
+
+            return 0;
+        });
+    }, [filteredItems]);
+
     const [committedFilters, setCommittedFilters] = useState(EMPTY_FILTERS)
     const [addOpen, setAddOpen] = useState(false)
     const [bulkOpen, setBulkOpen] = useState(false)
@@ -853,16 +844,84 @@ export default function Inventory() {
     const [martBatches, setMartBatches] = useState([])
     const [martBatchesLoading, setMartBatchesLoading] = useState(false)
 
-    // Fetch batches when batch tab is active
+    // ── Batch tab dedicated search + filter pills (same as warehouse inventory) ──
+    const [batchSearch, setBatchSearch] = useState('')
+    const [batchFilter, setBatchFilter] = useState('expiring_soon') // 'all' | 'expiring_soon' | 'expired' | 'low_stock'
+
+    // ── Client-side filter/sort — same pattern as warehouse InventoryManager ──
+    // allMartBatches: full list loaded once from Redis-cached API
+    // sortedMartBatches: pure JS filter+sort — no API call on search/pill change
+    const [allMartBatches, setAllMartBatches] = useState([])
+
+    const sortedMartBatches = useMemo(() => {
+        const q = batchSearch.toLowerCase().trim();
+        const now = new Date();
+        const in60 = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000);
+
+        return allMartBatches
+            .filter(r => {
+                // ── Search filter ──
+                if (q) {
+                    const hit = [
+                        r.product_name, r.product_code, r.batch_number,
+                        r.variant_code, r.variant_name, r.sku, r.aisle_location
+                    ].some(v => (v || '').toLowerCase().includes(q));
+                    if (!hit) return false;
+                }
+                // ── Pill filter ──
+                if (batchFilter === 'expiring_soon') {
+                    const d = r.expiry_date ? new Date(r.expiry_date) : null;
+                    return d && d >= now && d <= in60;
+                }
+                if (batchFilter === 'expired') {
+                    const d = r.expiry_date ? new Date(r.expiry_date) : null;
+                    return d && d < now;
+                }
+                if (batchFilter === 'low_stock') {
+                    return parseFloat(r.stock_qty) > 0 && parseFloat(r.stock_qty) <= parseFloat(r.low_stock_alert || 10);
+                }
+                return true; // 'all'
+            })
+            .sort((a, b) => {
+                const aExpired = checkIsExpired(a.expiry_date);
+                const bExpired = checkIsExpired(b.expiry_date);
+                if (aExpired && !bExpired) return -1;
+                if (!aExpired && bExpired) return 1;
+                if (aExpired && bExpired) {
+                    if (a.expiry_date && b.expiry_date) return new Date(a.expiry_date) - new Date(b.expiry_date);
+                    if (a.expiry_date) return -1;
+                    if (b.expiry_date) return 1;
+                }
+
+                const aExpiring = checkIsExpiringSoon(a.expiry_date);
+                const bExpiring = checkIsExpiringSoon(b.expiry_date);
+                if (aExpiring && !bExpiring) return -1;
+                if (!aExpiring && bExpiring) return 1;
+                if (aExpiring && bExpiring) {
+                    if (a.expiry_date && b.expiry_date) return new Date(a.expiry_date) - new Date(b.expiry_date);
+                    if (a.expiry_date) return -1;
+                    if (b.expiry_date) return 1;
+                }
+
+                if (a.expiry_date && b.expiry_date) return new Date(a.expiry_date) - new Date(b.expiry_date);
+                if (a.expiry_date) return -1;
+                if (b.expiry_date) return 1;
+
+                return 0;
+            });
+    }, [allMartBatches, batchSearch, batchFilter]);
+
+    // ── Load ALL batches once when mart or batches tab activates ─────────────
+    // Backend returns Redis-cached full list — client does all filtering in JS
     useEffect(() => {
         if (!martId || activeTab !== 'batches') return
         setMartBatchesLoading(true)
-        api.get(`/inventory/batches?martId=${encodeURIComponent(martId)}`)
+        api.get(`/inventory/batches?martId=${martId}`)
             .then(res => {
-                if (res.success) setMartBatches(res.data || [])
-                else setMartBatches([])
+                if (res.success) setAllMartBatches(res.data || [])
+                else setAllMartBatches([])
             })
-            .catch(err => { console.error('Failed to fetch batches:', err); setMartBatches([]) })
+            .catch(err => { console.error('Failed to fetch batches:', err); setAllMartBatches([]) })
             .finally(() => setMartBatchesLoading(false))
     }, [martId, activeTab])
 
@@ -872,7 +931,17 @@ export default function Inventory() {
             render: r => (
                 <div>
                     <p className="font-bold text-gray-900 text-xs leading-tight">{r.product_name || 'Unknown'}</p>
-                    <span className="bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded font-mono text-[10px] font-bold border border-gray-200">#{r.product_code}</span>
+                    {r.brand_name && (
+                        <div className="mt-1">
+                            <span className="bg-amber-50 text-amber-800 text-[8px] font-extrabold px-1 py-0.5 rounded border border-amber-200 uppercase tracking-wider">
+                                🏷️ {r.brand_name}
+                            </span>
+                        </div>
+                    )}
+                    {r.display_size && (
+                        <div className="text-[10px] text-slate-400 font-bold mt-0.5">{r.display_size}</div>
+                    )}
+                    <span className="bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded font-mono text-[10px] font-bold border border-gray-200 mt-1 inline-block">#{r.product_code}</span>
                 </div>
             ),
         },
@@ -890,7 +959,7 @@ export default function Inventory() {
         { key: 'batch_number', label: 'Batch #', render: r => <span className="font-mono text-xs font-bold text-gray-700">{r.batch_number || '—'}</span> },
         {
             key: 'stock', label: 'Available',
-            render: r => <span className="font-bold text-gray-800 text-xs">{r.stock_qty} <span className="text-[9px] text-gray-500 uppercase">{r.stock_unit}</span></span>,
+            render: r => <span className="font-bold text-gray-800 text-xs">{parseFloat(r.stock_qty).toLocaleString()} <span className="text-[9px] text-gray-500 uppercase">pcs</span></span>,
         },
         {
             key: 'reserved', label: 'Reserved',
@@ -989,7 +1058,15 @@ export default function Inventory() {
             render: r => (
                 <div>
                     <p className="font-bold text-gray-900 leading-tight text-xs">{r.product_name || 'Unknown Product'}</p>
-                    <div className="flex items-center gap-1.5 mt-1">
+                    {r.display_size && (
+                        <div className="text-[10px] text-slate-400 font-bold mt-0.5">{r.display_size}</div>
+                    )}
+                    <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                        {r.brand_name && (
+                            <span className="bg-amber-50 text-amber-800 text-[9px] font-extrabold px-1.5 py-0.5 rounded border border-amber-200 uppercase tracking-wider">
+                                🏷️ {r.brand_name}
+                            </span>
+                        )}
                         <span className="bg-blue-50 text-blue-700 text-[9px] font-extrabold px-1.5 py-0.5 rounded border border-blue-100 uppercase">
                             Var: {r.variant_code || 'default'}
                         </span>
@@ -1038,7 +1115,7 @@ export default function Inventory() {
                         <div className="flex items-center gap-1">
                             <span className="text-gray-400 font-bold text-[9px] uppercase">Qty:</span>
                             <span className={`font-bold ${isLow ? 'text-red-600' : 'text-gray-800'}`}>
-                                {r.stock_qty}<span className="ml-0.5 text-[9px] uppercase text-gray-500">{r.stock_unit}</span>
+                                {parseFloat(r.stock_qty).toLocaleString()}<span className="ml-0.5 text-[9px] uppercase text-gray-500">pcs</span>
                             </span>
                         </div>
                         <div className="flex items-center gap-1">
@@ -1146,6 +1223,7 @@ export default function Inventory() {
             { label: 'Active', value: backendSummary.active_items, color: 'text-green-600' },
             { label: 'In Active', value: backendSummary.inactive_items, color: 'text-gray-600' },
             { label: 'Expiring Soon', value: backendSummary.expiring_soon, color: 'text-orange-500' },
+            { label: 'Expired', value: backendSummary.expired, color: 'text-red-800 font-bold' },
             {
                 label: 'Stock Value',
                 value: backendSummary.total_stock_value != null
@@ -1250,22 +1328,121 @@ export default function Inventory() {
                     Please select a mart from the dropdown to view its inventory.
                 </div>
             ) : activeTab === 'batches' ? (
-                <Grid
-                    columns={batchColumns}
-                    data={martBatches}
-                    loading={martBatchesLoading}
-                    emptyText="No product batches found matching search criteria."
-                    pagination={false}
-                    showSearch={false}
-                />
+                <div className="space-y-3">
+                    {/* Batch Search + Filter Pills — same UX as warehouse inventory */}
+                    <div className="bg-white border border-gray-200 rounded-2xl px-4 py-3 shadow-sm">
+                        <div className="flex flex-col lg:flex-row gap-3 items-center">
+                            {/* Search */}
+                            <div className="flex-1 flex items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2.5 hover:border-primary-300 hover:bg-white transition-all duration-200">
+                                <svg className="w-3.5 h-3.5 text-gray-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                </svg>
+                                <input
+                                    type="text"
+                                    value={batchSearch}
+                                    onChange={e => setBatchSearch(e.target.value)}
+                                    placeholder="Search product, variant, batch number..."
+                                    className="w-full text-xs outline-none bg-transparent font-medium text-gray-700 placeholder-gray-400"
+                                />
+                                {batchSearch && (
+                                    <button
+                                        onClick={() => setBatchSearch('')}
+                                        className="text-xs text-gray-400 hover:text-rose-500 font-bold shrink-0 transition-colors"
+                                    >✕</button>
+                                )}
+                            </div>
+
+                            {/* Filter Pills */}
+                            <div className="flex items-center gap-2 flex-wrap">
+                                {[
+                                    { id: 'expiring_soon', label: 'Expiring Soon', emoji: '⏳' },
+                                    { id: 'all',           label: 'All Batches',   emoji: '📦' },
+                                    { id: 'expired',       label: 'Expired',       emoji: '🚫' },
+                                    { id: 'low_stock',     label: 'Low Stock',     emoji: '⚠️' },
+                                ].map(f => (
+                                    <button
+                                        key={f.id}
+                                        onClick={() => setBatchFilter(f.id)}
+                                        className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold border transition-all duration-150 whitespace-nowrap ${
+                                            batchFilter === f.id
+                                                ? f.id === 'expiring_soon'
+                                                    ? 'bg-orange-500 border-orange-500 text-white shadow-sm'
+                                                    : f.id === 'expired'
+                                                        ? 'bg-rose-600 border-rose-600 text-white shadow-sm'
+                                                        : f.id === 'low_stock'
+                                                            ? 'bg-rose-500 border-rose-500 text-white shadow-sm'
+                                                            : 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
+                                                : 'bg-white border-gray-200 text-gray-600 hover:border-gray-400'
+                                        }`}
+                                    >
+                                        {f.emoji} {f.label}
+                                        {martBatchesLoading && batchFilter === f.id && (
+                                            <svg className="w-3 h-3 animate-spin ml-1" fill="none" viewBox="0 0 24 24">
+                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                                            </svg>
+                                        )}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Active filter summary */}
+                        {(batchSearch || batchFilter !== 'expiring_soon') && (
+                            <div className="flex items-center gap-2 mt-2.5 pt-2.5 border-t border-gray-100">
+                                <span className="text-[10px] font-extrabold uppercase tracking-widest text-gray-400">Filters:</span>
+                                {batchFilter !== 'all' && (
+                                    <span className="inline-flex items-center text-[11px] font-semibold bg-white border border-primary-200 text-primary-700 px-2.5 py-0.5 rounded-full shadow-sm">
+                                        {batchFilter === 'expiring_soon' ? '⏳ Expiring Soon' : batchFilter === 'expired' ? '🚫 Expired' : '⚠️ Low Stock'}
+                                    </span>
+                                )}
+                                {batchSearch && (
+                                    <span className="inline-flex items-center text-[11px] font-semibold bg-white border border-primary-200 text-primary-700 px-2.5 py-0.5 rounded-full shadow-sm">
+                                        🔍 "{batchSearch}"
+                                    </span>
+                                )}
+                                <span className="ml-auto text-[11px] font-bold text-gray-500">
+                                    {martBatchesLoading ? 'Loading…' : `${sortedMartBatches.length} batch${sortedMartBatches.length !== 1 ? 'es' : ''}`}
+                                </span>
+                                <button
+                                    onClick={() => { setBatchSearch(''); setBatchFilter('expiring_soon') }}
+                                    className="text-[11px] font-bold text-red-400 hover:text-red-600 transition-colors"
+                                >✕ Reset</button>
+                            </div>
+                        )}
+                    </div>
+
+                    <Grid
+                        columns={batchColumns}
+                        data={sortedMartBatches}
+                        loading={martBatchesLoading}
+                        emptyText="No product batches found matching search criteria."
+                        pagination={false}
+                        showSearch={false}
+                        rowClassName={row => {
+                            const isExpired = checkIsExpired(row.expiry_date);
+                            const isExpiring = checkIsExpiringSoon(row.expiry_date);
+                            if (isExpired) return 'bg-red-900 text-white font-semibold border-l-4 border-red-600';
+                            if (isExpiring) return 'bg-rose-50/60 text-rose-900 border-l-4 border-rose-400 font-medium';
+                            return '';
+                        }}
+                    />
+                </div>
             ) : (
                 <Grid
                     columns={columns}
-                    data={filteredItems}
+                    data={sortedFilteredItems}
                     loading={filteredLoad}
                     emptyText="No inventory items match your filters."
                     pagination={false}
                     showSearch={false}
+                    rowClassName={row => {
+                        const isExpired = checkIsExpired(row.expiry_date);
+                        const isExpiring = checkIsExpiringSoon(row.expiry_date);
+                        if (isExpired) return 'bg-red-900 text-white font-semibold border-l-4 border-red-600';
+                        if (isExpiring) return 'bg-rose-50/60 text-rose-900 border-l-4 border-rose-400 font-medium';
+                        return '';
+                    }}
                 />
             )}
 

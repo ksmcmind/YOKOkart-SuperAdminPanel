@@ -4,10 +4,11 @@ const BASE_URL = 'http://localhost:3000/api'
 
 // import.meta.env.VITE_API_URL ||
 
-export const getToken = () => localStorage.getItem('ksmcm_token') || ''
+export const getToken = () => localStorage.getItem('ksmcm_super_admin_token') || ''
 
 const request = async (method, path, body = null) => {
     const isFormData = body instanceof FormData
+    const token = getToken()
 
     const options = {
         method,
@@ -15,6 +16,7 @@ const request = async (method, path, body = null) => {
         headers: {
             ...(!isFormData && { 'Content-Type': 'application/json' }),
             'X-Client-Type': 'web', // Tell backend to use cookies
+            ...(token && { 'Authorization': `Bearer ${token}` }),
         },
     }
 
@@ -24,7 +26,8 @@ const request = async (method, path, body = null) => {
     const data = await res.json()
 
     if (res.status === 401) {
-        localStorage.clear()
+        localStorage.removeItem('ksmcm_super_admin_user')
+        localStorage.removeItem('ksmcm_super_admin_token')
         if (path !== '/auth/me' && window.location.pathname !== '/login') {
             window.location.href = '/login'
         }

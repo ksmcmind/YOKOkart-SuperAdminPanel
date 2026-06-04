@@ -11,6 +11,7 @@ import Badge from '../components/Badge'
 import Input, { Select, Textarea } from '../components/Input'
 import BulkUploadModal from '../components/BulkUploadModal'
 import StatCard from '../components/StatCard'
+import AutocompleteVariantSelect from '../components/AutocompleteVariantSelect'
 
 const SCHEMA_FIELDS = [
   'product_code',
@@ -60,6 +61,7 @@ const PACKAGE_UNITS = [
 const EMPTY_RESTOCK_FORM = {
   productId: '',
   variantId: '',
+  variantLabel: '',
   pkgQuantity: '',
   pkgUnit: '',
   conversionFactor: '1',
@@ -170,88 +172,6 @@ function PaginationBar({ pagination, onPageChange, itemsPerPage, setItemsPerPage
   );
 }
 
-// ── Local Autocomplete Variant Selector Component ─────────────────────────────
-function AutocompleteVariantSelect({ catalogProducts, value, onChange, placeholder = "Search variant by brand/name..." }) {
-  const [searchVal, setSearchVal] = useState('')
-  const [focused, setFocused] = useState(false)
-
-  // Memoize all variants with brand for fast filtering
-  const allVariants = useMemo(() => {
-    const list = []
-    catalogProducts.forEach(p => {
-      const brand = p.brand || 'Generic';
-      (p.variants || []).forEach(v => {
-        list.push({
-          variantId: v.variant_id || v.variantId || v.variant_code,
-          variantName: v.variant_name || v.variantName || v.sku,
-          sku: v.sku || v.variant_code,
-          productName: p.name,
-          brandName: brand,
-          productCode: p.product_code,
-          variantCode: v.variant_code,
-          displayLabel: `[${brand}] ${p.name} - ${v.variant_name || v.sku}`
-        })
-      })
-    })
-    return list
-  }, [catalogProducts])
-
-  // Get selected variant display name
-  const currentSelectionLabel = useMemo(() => {
-    const found = allVariants.find(v => String(v.variantId) === String(value))
-    return found ? found.displayLabel : ''
-  }, [allVariants, value])
-
-  // Filter matching suggestions (cap at 25 for rapid UI performance)
-  const suggestions = useMemo(() => {
-    const query = searchVal.toLowerCase().trim()
-    if (!query) return allVariants.slice(0, 15) // default suggestions
-    return allVariants.filter(v => 
-      v.brandName.toLowerCase().includes(query) ||
-      v.productName.toLowerCase().includes(query) ||
-      v.variantName.toLowerCase().includes(query) ||
-      v.sku.toLowerCase().includes(query) ||
-      v.productCode.toLowerCase().includes(query) ||
-      v.variantCode.toLowerCase().includes(query)
-    ).slice(0, 30)
-  }, [allVariants, searchVal])
-
-  return (
-    <div className="relative">
-      <input
-        type="text"
-        className="input text-xs w-full font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg p-2.5 focus:border-primary-500 focus:ring-0 outline-none"
-        placeholder={currentSelectionLabel || placeholder}
-        value={searchVal}
-        onFocus={() => { setFocused(true); setSearchVal(''); }}
-        onBlur={() => setTimeout(() => setFocused(false), 200)}
-        onChange={e => setSearchVal(e.target.value)}
-      />
-      {focused && (
-        <div className="absolute left-0 right-0 z-50 bg-white border border-slate-200 rounded-xl shadow-xl max-h-60 overflow-y-auto mt-1 border-t-0 p-1">
-          {suggestions.length === 0 ? (
-            <div className="p-3 text-xs text-slate-400 font-bold text-center">No catalog variants found.</div>
-          ) : (
-            suggestions.map(v => (
-              <button
-                key={v.variantId}
-                type="button"
-                onClick={() => {
-                  onChange(v.variantId);
-                  setSearchVal('');
-                }}
-                className="w-full text-left text-xs font-semibold text-slate-700 px-3 py-2 rounded-lg hover:bg-slate-50 transition-colors duration-150 border-b border-slate-100 flex flex-col gap-0.5"
-              >
-                <span className="text-slate-800 font-bold">{v.displayLabel}</span>
-                <span className="text-[10px] text-slate-400 font-mono">SKU: {v.sku} | Prod: {v.productCode}</span>
-              </button>
-            ))
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
 
 export default function WarehouseInventory() {
   const dispatch = useDispatch()
@@ -288,6 +208,7 @@ export default function WarehouseInventory() {
   const [bulkOpen, setBulkOpen] = useState(false)
   const [restockOpen, setRestockOpen] = useState(false)
   const [adjustOpen, setAdjustOpen] = useState(false)
+  const [alertsOpen, setAlertsOpen] = useState(false)
 
   const [selectedItem, setSelectedItem] = useState(null) // selected Batch
   const [submitting, setSubmitting] = useState(false)
@@ -297,11 +218,12 @@ export default function WarehouseInventory() {
   const [adjustForm, setAdjustForm] = useState({ qtyChange: '', mode: 'add', reason: '' })
 
   // Filters (Tab 1 Summary Specific)
-  const [stockStatus, setStockStatus] = useState('all') // 'all', 'low_stock', 'optimized'
-  const [selectedUnit, setSelectedUnit] = useState('')
-  const [sortBy, setSortBy] = useState('name') // 'name', 'qty_desc', 'qty_asc'
+  const [summaryFilter, setSummaryFilter] = useState('all') // 'all' | 'expiring_soon' | 'low_stock'
   const [summaryPage, setSummaryPage] = useState(1)
   const [summaryLimit, setSummaryLimit] = useState(25)
+
+  // Filters (Tab 2 Batches Specific)
+  const [batchFilter, setBatchFilter] = useState('expiring_soon') // 'all' | 'expiring_soon' | 'expired' | 'low_stock'
 
   // ── Date Formatting Utility ──────────────────────────────────────────────────
   const formatDateDisplay = (dateStr) => {
@@ -364,8 +286,7 @@ export default function WarehouseInventory() {
     if (!selectedWarehouseId) return
     setLoading(true)
     try {
-      const q = search ? `&search=${encodeURIComponent(search)}` : ''
-      const res = await api.get(`/warehouse-inventory/warehouse/${selectedWarehouseId}?limit=200${q}`)
+      const res = await api.get(`/warehouse-inventory/warehouse/${selectedWarehouseId}?limit=5000`)
       if (res.success) {
         setInventory(res.data || [])
       }
@@ -381,7 +302,9 @@ export default function WarehouseInventory() {
     if (!selectedWarehouseId) return
     setLoading(true)
     try {
-      const q = `?page=${batchesPage}&limit=${batchesLimit}` + (search ? `&search=${encodeURIComponent(search)}` : '')
+      const expiringSoon = batchFilter === 'expiring_soon' ? '&expiring_soon=true' : ''
+      const expiredOnly  = batchFilter === 'expired'        ? '&expired_only=true'  : ''
+      const q = `?page=${batchesPage}&limit=${batchesLimit}${expiringSoon}${expiredOnly}` + (search ? `&search=${encodeURIComponent(search)}` : '')
       const res = await api.get(`/warehouse-inventory/warehouse/${selectedWarehouseId}/batches${q}`)
       if (res.success) {
         setBatches(res.data || [])
@@ -416,22 +339,23 @@ export default function WarehouseInventory() {
     refreshActiveTabData()
   }, [refreshActiveTabData])
 
-  // Debounced search trigger
+  // Debounced search/filter trigger for batches tab
   useEffect(() => {
+    if (activeTab !== 'batches') return
     const delayDebounce = setTimeout(() => {
-      refreshActiveTabData()
+      fetchBatches()
     }, 400)
     return () => clearTimeout(delayDebounce)
-  }, [search])
+  }, [search, activeTab, batchFilter])
 
   // Reset pagination indexes on filters change
   useEffect(() => {
     setSummaryPage(1)
-  }, [search, stockStatus, selectedUnit, sortBy])
+  }, [search, summaryFilter])
 
   useEffect(() => {
     setBatchesPage(1)
-  }, [search])
+  }, [search, batchFilter])
 
   // ── CSV Template Downloads ──────────────────────────────────────────────────
   const downloadCSVTemplate = () => {
@@ -451,38 +375,61 @@ export default function WarehouseInventory() {
 
   // ── Filters & Processing for Tab 1 Summary ──────────────────────────────────
 
+  const isExpiringSoon = (dateStr) => {
+    if (!dateStr) return false;
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return false;
+    return d <= new Date(Date.now() + 60 * 24 * 60 * 60 * 1000); // 60 days
+  };
+
   const processedInventory = useMemo(() => {
+    const qLower = search.toLowerCase().trim();
     return inventory.filter(item => {
-      // 1. Status Filter
-      if (stockStatus === 'low_stock') {
-        if (parseFloat(item.available_qty) > parseFloat(item.reorder_level)) return false;
-      } else if (stockStatus === 'optimized') {
-        if (parseFloat(item.available_qty) <= parseFloat(item.reorder_level)) return false;
+      // Search Filter
+      if (qLower) {
+        const product_name = (item.product_name || '').toLowerCase();
+        const product_code = (item.product_code || '').toLowerCase();
+        const sku = (item.sku || '').toLowerCase();
+        const brand = (item.brand || item.brand_name || '').toLowerCase();
+        if (
+          !product_name.includes(qLower) &&
+          !product_code.includes(qLower) &&
+          !sku.includes(qLower) &&
+          !brand.includes(qLower)
+        ) return false;
       }
-      // 2. Unit Filter
-      if (selectedUnit && String(item.stock_unit || '').toLowerCase().trim() !== selectedUnit.toLowerCase().trim()) {
-        return false;
+      // Status Filter
+      if (summaryFilter === 'low_stock') {
+        if (parseFloat(item.available_qty) > parseFloat(item.reorder_level)) return false;
+      } else if (summaryFilter === 'expiring_soon') {
+        if (!isExpiringSoon(item.nearest_expiry)) return false;
       }
       return true;
     }).sort((a, b) => {
-      if (sortBy === 'qty_desc') {
-        return parseFloat(b.available_qty || 0) - parseFloat(a.available_qty || 0);
-      }
-      if (sortBy === 'qty_asc') {
-        return parseFloat(a.available_qty || 0) - parseFloat(b.available_qty || 0);
-      }
+      // Always show expiring-soon items first
+      const aExpiring = isExpiringSoon(a.nearest_expiry);
+      const bExpiring = isExpiringSoon(b.nearest_expiry);
+      if (aExpiring && !bExpiring) return -1;
+      if (!aExpiring && bExpiring) return 1;
       return (a.product_name || '').localeCompare(b.product_name || '');
     });
-  }, [inventory, stockStatus, selectedUnit, sortBy]);
-
-  const uniqueUnits = useMemo(() => {
-    return [...new Set(inventory.map(item => String(item.stock_unit || '').toLowerCase().trim()).filter(Boolean))].sort();
-  }, [inventory]);
+  }, [inventory, search, summaryFilter]);
 
   const paginatedSummaryData = useMemo(() => {
     const start = (summaryPage - 1) * summaryLimit;
     return processedInventory.slice(start, start + summaryLimit);
   }, [processedInventory, summaryPage, summaryLimit]);
+
+  // Client-side filter for low_stock batches (expiring/expired handled by API)
+  const displayedBatches = useMemo(() => {
+    if (batchFilter !== 'low_stock') return batches;
+    return batches.filter(b => parseFloat(b.qty_available || 0) <= parseFloat(b.reorder_level || 10));
+  }, [batches, batchFilter]);
+
+  const lowStockAlertItems = useMemo(() => {
+    return inventory.filter(item => parseFloat(item.available_qty) <= parseFloat(item.reorder_level));
+  }, [inventory]);
+
 
   // ── Restock Modal Form Handlers ─────────────────────────────────────────────
 
@@ -875,24 +822,35 @@ export default function WarehouseInventory() {
   // ── Grid Columns Specifications ──────────────────────────────────────────────
 
   const summaryColumns = [
-    { key: 'product_name', label: 'Product Name' },
+    {
+      key: 'product_name',
+      label: 'Product Name',
+      render: (row) => (
+        <div>
+          <div className="font-medium text-slate-800 leading-tight">{row.product_name}</div>
+          {row.display_size && (
+            <span className="inline-block text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-full px-2 py-0.5 mt-0.5">{row.display_size}</span>
+          )}
+        </div>
+      )
+    },
     { key: 'sku', label: 'SKU' },
     {
       key: 'bulk_stock_qty',
       label: 'Bulk Stock',
-      render: (row) => `${parseFloat(row.bulk_stock_qty).toLocaleString()} ${row.stock_unit || 'pcs'}`
+      render: (row) => `${parseFloat(row.bulk_stock_qty).toLocaleString()} pcs`
     },
     {
       key: 'reserved_qty',
       label: 'Reserved',
-      render: (row) => `${parseFloat(row.reserved_qty).toLocaleString()} ${row.stock_unit || 'pcs'}`
+      render: (row) => `${parseFloat(row.reserved_qty).toLocaleString()} pcs`
     },
     {
       key: 'available_qty',
       label: 'Available',
       render: (row) => (
         <span className="font-bold">
-          {parseFloat(row.available_qty).toLocaleString()} {row.stock_unit || 'pcs'}
+          {parseFloat(row.available_qty).toLocaleString()} pcs
         </span>
       )
     },
@@ -923,11 +881,22 @@ export default function WarehouseInventory() {
 
   const batchColumns = [
     { key: 'batch_number', label: 'Batch No' },
-    { key: 'product_name', label: 'Product' },
+    {
+      key: 'product_name',
+      label: 'Product',
+      render: (row) => (
+        <div>
+          <div className="font-medium text-slate-800 leading-tight">{row.product_name}</div>
+          {row.display_size && (
+            <div className="text-xs text-slate-400 mt-0.5">{row.display_size}</div>
+          )}
+        </div>
+      )
+    },
     { key: 'variant_sku', label: 'SKU' },
     { key: 'asl', label: 'ASL Coordinates', render: (row) => <span className="font-mono bg-slate-100 text-slate-800 px-2 py-0.5 rounded text-xs">{row.asl || row.ASL || '—'}</span> },
-    { key: 'qty_received', label: 'Original Received', render: (row) => `${parseFloat(row.qty_received).toLocaleString()} ${row.stock_unit || 'pcs'}` },
-    { key: 'qty_available', label: 'Available Count', render: (row) => <span className="font-bold">{parseFloat(row.qty_available).toLocaleString()} {row.stock_unit || 'pcs'}</span> },
+    { key: 'qty_received', label: 'Original Received', render: (row) => `${parseFloat(row.qty_received).toLocaleString()} pcs` },
+    { key: 'qty_available', label: 'Available Count', render: (row) => <span className="font-bold">{parseFloat(row.qty_available).toLocaleString()} pcs</span> },
     { key: 'unit_cost', label: 'Unit Cost', render: (row) => `₹${parseFloat(row.unit_cost || 0).toFixed(2)}` },
     { key: 'manufacture_date', label: 'MFG Date', render: (row) => formatDateDisplay(row.manufacture_date) },
     { key: 'expiry_date', label: 'Expiry Date', render: (row) => <span className="text-slate-600 font-semibold">{formatDateDisplay(row.expiry_date)}</span> },
@@ -990,14 +959,16 @@ export default function WarehouseInventory() {
       {/* Stats Telemetry Panels */}
       {selectedWarehouseId && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <StatCard title="Total SKUs" value={summaryStats.total_skus} icon="🧬" color="indigo" />
-          <StatCard title="Active Batches" value={summaryStats.total_batches} icon="📦" color="emerald" />
-          <StatCard title="Available Stock" value={summaryStats.total_available.toLocaleString()} icon="📊" color="teal" />
+          <StatCard label="Total SKUs" value={summaryStats.total_skus} icon="🧬" color="blue" sub="Total unique catalog items stocked" />
+          <StatCard label="Active Batches" value={summaryStats.total_batches} icon="📦" color="gray" sub="Total physical batch groups in shelves" />
+          <StatCard label="Available Stock" value={summaryStats.total_available.toLocaleString()} icon="📊" color="green" sub="Net sellable units across all batches" />
           <StatCard 
-            title="Low Stock Alerts" 
+            label="Low Stock Alerts" 
             value={summaryStats.out_of_stock_skus} 
             icon="⚠️" 
-            color={summaryStats.out_of_stock_skus > 0 ? "rose" : "slate"} 
+            color={summaryStats.out_of_stock_skus > 0 ? "red" : "gray"} 
+            sub="SKUs at or below their reorder level"
+            onClick={() => setAlertsOpen(true)}
           />
         </div>
       )}
@@ -1018,63 +989,77 @@ export default function WarehouseInventory() {
         </button>
       </div>
 
-      {/* Premium Advanced Filter Controls */}
+      {/* Zepto-style Filter Pill Bar */}
       {selectedWarehouseId && (
-        <div className="bg-white border border-slate-200/85 rounded-2xl p-4 shadow-sm space-y-3">
-          <div className="flex flex-col lg:flex-row gap-3">
-            <div className="flex-1 flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 hover:border-primary-300 hover:bg-white transition-all duration-200 group">
-              <span className="text-slate-400">🔍</span>
+        <div className="bg-white border border-slate-100 rounded-2xl px-4 py-3 shadow-sm">
+          <div className="flex flex-col lg:flex-row gap-3 items-center">
+            {/* Search */}
+            <div className="flex-1 flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 hover:border-primary-300 hover:bg-white transition-all duration-200">
+              <span className="text-slate-400 text-sm">🔍</span>
               <input
                 type="text"
                 value={search}
                 onChange={e => setSearch(e.target.value)}
-                placeholder="Search by code, product name, brand, batch coordinate..."
-                className="w-full text-xs outline-none bg-transparent font-semibold text-slate-700 placeholder-slate-400"
+                placeholder="Search product, SKU, batch, brand..."
+                className="w-full text-sm outline-none bg-transparent font-medium text-slate-700 placeholder-slate-400"
               />
               {search && <button onClick={() => setSearch('')} className="text-xs text-slate-400 hover:text-rose-500 font-bold shrink-0">✕</button>}
             </div>
 
+            {/* Summary Filter Pills */}
             {activeTab === 'summary' && (
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 hover:border-primary-300 hover:bg-white transition-all duration-200">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Stock:</span>
-                  <select
-                    value={stockStatus}
-                    onChange={e => setStockStatus(e.target.value)}
-                    className="text-xs bg-transparent font-bold text-slate-700 outline-none cursor-pointer focus:ring-0"
+              <div className="flex items-center gap-2 flex-wrap">
+                {[
+                  { id: 'all',          label: 'All',           emoji: '📦' },
+                  { id: 'expiring_soon',label: 'Expiring Soon', emoji: '⏳' },
+                  { id: 'low_stock',    label: 'Low Stock',     emoji: '⚠️' },
+                ].map(f => (
+                  <button
+                    key={f.id}
+                    onClick={() => setSummaryFilter(f.id)}
+                    className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold border transition-all duration-150 whitespace-nowrap ${
+                      summaryFilter === f.id
+                        ? f.id === 'expiring_soon'
+                          ? 'bg-orange-500 border-orange-500 text-white shadow-sm'
+                          : f.id === 'low_stock'
+                            ? 'bg-rose-500 border-rose-500 text-white shadow-sm'
+                            : 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
+                        : 'bg-white border-slate-200 text-slate-600 hover:border-slate-400'
+                    }`}
                   >
-                    <option value="all">🌐 All Stocks</option>
-                    <option value="low_stock">⚠️ Low Stock Only</option>
-                    <option value="optimized">✅ Optimal Stocks</option>
-                  </select>
-                </div>
+                    {f.emoji} {f.label}
+                  </button>
+                ))}
+              </div>
+            )}
 
-                <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 hover:border-primary-300 hover:bg-white transition-all duration-200">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Unit:</span>
-                  <select
-                    value={selectedUnit}
-                    onChange={e => setSelectedUnit(e.target.value)}
-                    className="text-xs bg-transparent font-bold text-slate-700 outline-none cursor-pointer focus:ring-0"
+            {/* Batch Filter Pills */}
+            {activeTab === 'batches' && (
+              <div className="flex items-center gap-2 flex-wrap">
+                {[
+                  { id: 'expiring_soon', label: 'Expiring Soon', emoji: '⏳' },
+                  { id: 'all',           label: 'All Batches',   emoji: '📦' },
+                  { id: 'expired',       label: 'Expired',       emoji: '🚫' },
+                  { id: 'low_stock',     label: 'Low Stock',     emoji: '⚠️' },
+                ].map(f => (
+                  <button
+                    key={f.id}
+                    onClick={() => setBatchFilter(f.id)}
+                    className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold border transition-all duration-150 whitespace-nowrap ${
+                      batchFilter === f.id
+                        ? f.id === 'expiring_soon'
+                          ? 'bg-orange-500 border-orange-500 text-white shadow-sm'
+                          : f.id === 'expired'
+                            ? 'bg-rose-600 border-rose-600 text-white shadow-sm'
+                            : f.id === 'low_stock'
+                              ? 'bg-rose-500 border-rose-500 text-white shadow-sm'
+                              : 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
+                        : 'bg-white border-slate-200 text-slate-600 hover:border-slate-400'
+                    }`}
                   >
-                    <option value="">🎒 All Units</option>
-                    {uniqueUnits.map(unit => (
-                      <option key={unit} value={unit}>⚖️ {unit.toUpperCase()}</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 hover:border-primary-300 hover:bg-white transition-all duration-200">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Sort:</span>
-                  <select
-                    value={sortBy}
-                    onChange={e => setSortBy(e.target.value)}
-                    className="text-xs bg-transparent font-bold text-slate-700 outline-none cursor-pointer focus:ring-0"
-                  >
-                    <option value="name">📖 Name (A-Z)</option>
-                    <option value="qty_desc">📈 Stock (High → Low)</option>
-                    <option value="qty_asc">📉 Stock (Low → High)</option>
-                  </select>
-                </div>
+                    {f.emoji} {f.label}
+                  </button>
+                ))}
               </div>
             )}
           </div>
@@ -1088,14 +1073,49 @@ export default function WarehouseInventory() {
         </div>
       ) : activeTab === 'batches' ? (
         <div className="space-y-4">
-          <Grid
-            columns={batchColumns}
-            data={batches}
-            loading={loading}
-            emptyText="No product batches found in warehouse inventory."
-            pagination={false}
-            showSearch={false}
-          />
+          <div className="card overflow-hidden">
+            {loading ? (
+              <div className="py-16 text-center text-slate-400 text-sm">Loading batches...</div>
+            ) : displayedBatches.length === 0 ? (
+              <div className="py-16 text-center text-slate-400 text-sm">No batches found for selected filter.</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-100">
+                      {batchColumns.map(col => (
+                        <th key={col.key} className="px-4 py-3 text-left text-xs font-black text-slate-500 uppercase tracking-wider whitespace-nowrap">{col.label}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {displayedBatches.map((row, i) => {
+                      const expiring = row.expiry_date && new Date(row.expiry_date) <= new Date(Date.now() + 60 * 24 * 60 * 60 * 1000);
+                      const expired  = row.is_expired || (row.expiry_date && new Date(row.expiry_date) < new Date());
+                      return (
+                        <tr
+                          key={row.batch_id || i}
+                          className={`border-b border-slate-50 transition-all ${
+                            expired
+                              ? 'bg-rose-100/75 text-rose-950 font-medium border-l-4 border-rose-600'
+                              : expiring
+                                ? 'bg-rose-50/60 text-rose-900 border-l-4 border-rose-400'
+                                : 'hover:bg-slate-50/60'
+                          }`}
+                        >
+                          {batchColumns.map(col => (
+                            <td key={col.key} className="px-4 py-3 text-slate-700 whitespace-nowrap">
+                              {col.render ? col.render(row) : (row[col.key] ?? '—')}
+                            </td>
+                          ))}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
           <PaginationBar 
             pagination={{
               page: batchesPagination.page,
@@ -1110,14 +1130,46 @@ export default function WarehouseInventory() {
         </div>
       ) : (
         <div className="space-y-4">
-          <Grid
-            columns={summaryColumns}
-            data={paginatedSummaryData}
-            loading={loading}
-            emptyText="No shelves records found matching active filters."
-            pagination={false}
-            showSearch={false}
-          />
+          <div className="card overflow-hidden">
+            {loading ? (
+              <div className="py-16 text-center text-slate-400 text-sm">Loading inventory...</div>
+            ) : paginatedSummaryData.length === 0 ? (
+              <div className="py-16 text-center text-slate-400 text-sm">No items found matching active filters.</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-100">
+                      {summaryColumns.map(col => (
+                        <th key={col.key} className="px-4 py-3 text-left text-xs font-black text-slate-500 uppercase tracking-wider whitespace-nowrap">{col.label}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paginatedSummaryData.map((row, i) => {
+                      const expiring = isExpiringSoon(row.nearest_expiry);
+                      return (
+                        <tr
+                          key={row.variant_id || i}
+                          className={`border-b border-slate-50 transition-all ${
+                            expiring
+                              ? 'bg-rose-50/60 text-rose-900 border-l-4 border-rose-400 font-medium'
+                              : 'hover:bg-slate-50/60'
+                          }`}
+                        >
+                          {summaryColumns.map(col => (
+                            <td key={col.key} className="px-4 py-3 text-slate-700 whitespace-nowrap">
+                              {col.render ? col.render(row) : (row[col.key] ?? '—')}
+                            </td>
+                          ))}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
           <PaginationBar 
             pagination={{
               page: summaryPage,
@@ -1133,6 +1185,105 @@ export default function WarehouseInventory() {
       )}
 
 
+
+      {/* ── MODAL: Low Stock Alerts Action Centre ── */}
+      <Modal
+        title="🚨 Low Stock Alerts Action Centre"
+        open={alertsOpen}
+        onClose={() => setAlertsOpen(false)}
+        size="xl"
+        footer={<Button variant="secondary" onClick={() => setAlertsOpen(false)}>Close</Button>}
+      >
+        <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
+          <div className="bg-red-50 border border-red-100 rounded-xl p-4 text-xs flex justify-between items-center">
+            <div>
+              <p className="font-bold text-red-800 text-sm">Central Warehouse Low Stock Alerts</p>
+              <p className="text-red-600 mt-1">
+                The following variants are running below their designated safety reorder thresholds. Action is recommended to prevent stockout.
+              </p>
+            </div>
+            <div className="text-right shrink-0">
+              <span className="text-red-700 bg-red-100 font-extrabold px-3 py-1.5 rounded-full text-xs">
+                ⚠️ {lowStockAlertItems.length} SKUs Alerting
+              </span>
+            </div>
+          </div>
+
+          <div className="bg-white border border-slate-100 rounded-xl overflow-hidden shadow-sm">
+            {lowStockAlertItems.length === 0 ? (
+              <div className="py-12 text-center text-slate-400 font-semibold text-sm">
+                🎉 All stock levels are optimal! No low stock alerts active.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs text-left">
+                  <thead className="bg-slate-50 border-b border-slate-100 text-slate-400 font-bold uppercase text-[9px] tracking-wider">
+                    <tr>
+                      <th className="p-3">Product details</th>
+                      <th className="p-3">SKU / Code</th>
+                      <th className="p-3">Current Stock</th>
+                      <th className="p-3">Min Threshold</th>
+                      <th className="p-3">Deficit</th>
+                      <th className="p-3 text-right">Procure Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lowStockAlertItems.map((item, idx) => {
+                      const deficit = Math.max(0, parseInt(item.reorder_qty || 200) - parseFloat(item.available_qty));
+                      return (
+                        <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50/50">
+                          <td className="p-3">
+                            <div className="font-bold text-slate-800">{item.product_name}</div>
+                            {item.display_size && (
+                              <span className="inline-block text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-full px-2 py-0.5 mt-0.5">
+                                {item.display_size}
+                              </span>
+                            )}
+                          </td>
+                          <td className="p-3 font-mono text-slate-500">{item.sku}</td>
+                          <td className="p-3 text-rose-600 font-black">{parseFloat(item.available_qty).toLocaleString()} pcs</td>
+                          <td className="p-3 font-medium text-slate-600">{item.reorder_level} pcs</td>
+                          <td className="p-3 font-bold text-amber-600 font-mono">+{deficit.toLocaleString()} pcs</td>
+                          <td className="p-3 text-right">
+                            <Button
+                              variant="primary"
+                              size="sm"
+                              className="bg-indigo-600 hover:bg-indigo-700 whitespace-nowrap"
+                              onClick={() => {
+                                setRestockForm({
+                                  productId: item.product_id,
+                                  variantId: item.variant_id,
+                                  variantLabel: `[${item.brand_name || 'Generic'}] ${item.product_name} - ${item.variant_name || item.sku}`,
+                                  pkgQuantity: '',
+                                  pkgUnit: 'box',
+                                  conversionFactor: '50',
+                                  stockUnit: 'pcs',
+                                  batchNumber: `B-${Date.now().toString().slice(-6)}`,
+                                  expiryDate: '',
+                                  manufactureDate: '',
+                                  bestBeforeDate: '',
+                                  ASL: 'A-1-1',
+                                  unitCost: '10.00',
+                                  reorderLevel: item.reorder_level || '50',
+                                  reorderQty: item.reorder_qty || '200'
+                                });
+                                setAlertsOpen(false);
+                                setRestockOpen(true);
+                              }}
+                            >
+                              📥 Quick Intake
+                            </Button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      </Modal>
 
       {/* ── MODAL: Single Manual Restock ── */}
       <Modal
@@ -1152,67 +1303,21 @@ export default function WarehouseInventory() {
             <h4 className="text-[10px] font-black text-indigo-600 uppercase tracking-widest flex items-center gap-2">
               <span className="w-1.5 h-3 bg-indigo-600 rounded-full" />Catalog Product Reference
             </h4>
-            <div className="grid grid-cols-2 gap-4">
-              <Select
-                label="Select Catalog Item *"
-                required
-                value={restockForm.productId}
-                onChange={e => {
-                  const prodId = e.target.value;
-                  const product = catalogProducts.find(p => 
-                    p.id === prodId || p.productId === prodId || p.product_id === prodId || p._id === prodId
-                  );
-                  const variants = product?.variants || [];
-                  const singleVariant = variants.length === 1 ? variants[0] : null;
-                  const singleVariantId = singleVariant ? (singleVariant.variant_id || singleVariant.variant_code || singleVariant.variantId) : '';
-                  setRestockForm(prev => ({ 
-                    ...prev, 
-                    productId: prodId, 
-                    variantId: singleVariantId,
-                    stockUnit: singleVariant?.stock_unit || 'pcs'
+            <div className="form-group">
+              <label className="label block mb-1">Search Catalog Variant *</label>
+              <AutocompleteVariantSelect
+                value={restockForm.variantId}
+                displayLabel={restockForm.variantLabel}
+                onChange={(variantId, displayLabel, v) => {
+                  setRestockForm(prev => ({
+                    ...prev,
+                    productId: v.productId,
+                    variantId: variantId,
+                    stockUnit: v.stockUnit || 'pcs',
+                    variantLabel: displayLabel
                   }));
                 }}
-              >
-                <option value="">-- Choose Product --</option>
-                {catalogProducts.map(p => {
-                  const val = p.id || p.productId || p.product_id || p._id;
-                  return <option key={val} value={val}>{p.name} ({p.brand})</option>;
-                })}
-              </Select>
-
-              {restockForm.productId && (
-                <Select
-                  label="Select Variant *"
-                  required
-                  value={restockForm.variantId}
-                  onChange={e => {
-                    const varId = e.target.value;
-                    const product = catalogProducts.find(p => 
-                      p.id === restockForm.productId || p.productId === restockForm.productId || p.product_id === restockForm.productId || p._id === restockForm.productId
-                    );
-                    const variantObj = (product?.variants || []).find(v => 
-                      v.variantId === varId || v.variant_id === varId || v.variant_code === varId
-                    );
-                    setRestockForm(prev => ({ 
-                      ...prev, 
-                      variantId: varId,
-                      stockUnit: variantObj?.stock_unit || 'pcs'
-                    }));
-                  }}
-                >
-                  <option value="">-- Choose Variant --</option>
-                  {(() => {
-                    const product = catalogProducts.find(p => 
-                      p.id === restockForm.productId || p.productId === restockForm.productId || p.product_id === restockForm.productId || p._id === restockForm.productId
-                    );
-                    return (product?.variants || []).map(v => {
-                      const val = v.variantId || v.variant_id || v.variant_code;
-                      const name = v.variantName || v.variant_name || val;
-                      return <option key={val} value={val}>{name} ({val})</option>;
-                    });
-                  })()}
-                </Select>
-              )}
+              />
             </div>
           </div>
 

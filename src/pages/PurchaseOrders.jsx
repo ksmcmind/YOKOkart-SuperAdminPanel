@@ -8,8 +8,9 @@ import Button from '../components/Button'
 import Grid from '../components/Grid'
 import Modal from '../components/Modal'
 import Badge from '../components/Badge'
-import Input, { Select } from '../components/Input'
+import Input, { Select, Textarea } from '../components/Input'
 import BulkUploadModal from '../components/BulkUploadModal'
+import AutocompleteVariantSelect from '../components/AutocompleteVariantSelect'
 
 const PACKAGE_UNITS = [
   { value: 'box', label: 'Box' },
@@ -33,85 +34,6 @@ const EMPTY_PO_FORM = {
   items: []
 }
 
-// Autocomplete variant select helper
-function AutocompleteVariantSelect({ value, displayLabel, onChange, placeholder = "Search variant by brand/name/SKU..." }) {
-  const [searchVal, setSearchVal] = useState('')
-  const [suggestions, setSuggestions] = useState([])
-  const [loading, setLoading] = useState(false)
-  const [focused, setFocused] = useState(false)
-
-  useEffect(() => {
-    const q = searchVal.trim()
-    if (!q || q.length < 2) {
-      setSuggestions([])
-      return
-    }
-
-    const timer = setTimeout(async () => {
-      setLoading(true)
-      try {
-        const res = await api.get(`/products/variants?search=${encodeURIComponent(q)}&limit=25`)
-        if (res.success) {
-          setSuggestions(res.data?.variants || [])
-        }
-      } catch (err) {
-        console.error('[PO Variant Autocomplete] Failed:', err)
-      } finally {
-        setLoading(false)
-      }
-    }, 350)
-
-    return () => clearTimeout(timer)
-  }, [searchVal])
-
-  return (
-    <div className="relative">
-      <div className="relative">
-        <input
-          type="text"
-          className="input text-xs w-full font-semibold text-slate-700 bg-white border border-slate-200 rounded-lg p-2.5 focus:border-primary-500 focus:ring-0 outline-none pr-8"
-          placeholder={displayLabel || placeholder}
-          value={searchVal}
-          onFocus={() => { setFocused(true); setSearchVal(''); }}
-          onBlur={() => setTimeout(() => setFocused(false), 200)}
-          onChange={e => setSearchVal(e.target.value)}
-        />
-        {loading && (
-          <div className="absolute right-3 top-1/2 -translate-y-1/2">
-            <div className="w-3.5 h-3.5 border-2 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
-          </div>
-        )}
-      </div>
-      {focused && (
-        <div className="absolute left-0 right-0 z-50 bg-white border border-slate-200 rounded-xl shadow-xl max-h-60 overflow-y-auto mt-1 border-t-0 p-1">
-          {suggestions.length === 0 ? (
-            <div className="p-3 text-xs text-slate-400 font-bold text-center">
-              {searchVal.trim().length < 2 ? 'Type at least 2 chars to search...' : 'No catalog variants found.'}
-            </div>
-          ) : (
-            suggestions.map(v => {
-              const label = `[${v.brand || 'Generic'}] ${v.productName || v.product_name} - ${v.variantName || v.variant_name || v.sku}`
-              return (
-                <button
-                  key={v.variantId || v.variant_id}
-                  type="button"
-                  onClick={() => {
-                    onChange(v.variantId || v.variant_id, label);
-                    setSearchVal('');
-                  }}
-                  className="w-full text-left text-xs font-semibold text-slate-700 px-3 py-2 rounded-lg hover:bg-slate-50 transition-colors duration-150 border-b border-slate-100 flex flex-col gap-0.5"
-                >
-                  <span className="text-slate-800 font-bold">{label}</span>
-                  <span className="text-[10px] text-slate-400 font-mono">SKU: {v.sku} | Prod: {v.product_code || v.productCode}</span>
-                </button>
-              )
-            })
-          )}
-        </div>
-      )}
-    </div>
-  )
-}
 
 
 export default function PurchaseOrders() {
@@ -121,6 +43,7 @@ export default function PurchaseOrders() {
   const [selectedWarehouseId, setSelectedWarehouseId] = useState('')
   const [purchaseOrders, setPurchaseOrders] = useState([])
   const [loading, setLoading] = useState(false)
+  const [statusFilter, setStatusFilter] = useState('') // '' = All
 
   // Dialog configurations
   const [poOpen, setPoOpen] = useState(false)
@@ -137,6 +60,111 @@ export default function PurchaseOrders() {
   // Forms
   const [poForm, setPoForm] = useState(EMPTY_PO_FORM)
   const [grnForm, setGrnForm] = useState({ invoiceNumber: '', notes: '', items: [] })
+
+  // Edit Receipt State
+  const [editReceiptOpen, setEditReceiptOpen] = useState(false)
+  const [selectedReceipt, setSelectedReceipt] = useState(null)
+  const [editReceiptForm, setEditReceiptForm] = useState({
+    qtyReceivedRaw: '',
+    unitCost: '',
+    invoiceNumber: '',
+    batchNumber: '',
+    ASL: '',
+    manufactureDate: '',
+    expiryDate: '',
+    bestBeforeDate: '',
+    notes: ''
+  })
+
+  const toInputDate = (dateStr) => {
+    if (!dateStr) return ''
+    try {
+      const d = new Date(dateStr)
+      if (isNaN(d.getTime())) return ''
+      return d.toISOString().split('T')[0]
+    } catch {
+      return ''
+    }
+  }
+
+  const openEditReceiptWizard = (receipt) => {
+    setSelectedReceipt(receipt)
+    setEditReceiptForm({
+      qtyReceivedRaw: receipt.qty_received_raw || '',
+      unitCost: receipt.unit_cost || '',
+      invoiceNumber: receipt.invoice_number || '',
+      batchNumber: receipt.batch_number || '',
+      ASL: receipt.asl || '',
+      manufactureDate: toInputDate(receipt.manufacture_date),
+      expiryDate: toInputDate(receipt.expiry_date),
+      bestBeforeDate: toInputDate(receipt.best_before_date),
+      notes: receipt.notes || ''
+    })
+    setEditReceiptOpen(true)
+  }
+
+  const handleEditReceiptSubmit = async () => {
+    if (!selectedReceipt) return
+
+    const qty = parseFloat(editReceiptForm.qtyReceivedRaw)
+    if (isNaN(qty) || qty < 0) {
+      dispatch(showToast({ message: 'Valid quantity received is required', type: 'error' }))
+      return
+    }
+
+    if (!editReceiptForm.batchNumber || !editReceiptForm.batchNumber.trim()) {
+      dispatch(showToast({ message: 'Batch Number is required', type: 'error' }))
+      return
+    }
+
+    if (!editReceiptForm.ASL || !editReceiptForm.ASL.trim()) {
+      dispatch(showToast({ message: 'ASL Location is required', type: 'error' }))
+      return
+    }
+
+    if (!editReceiptForm.expiryDate) {
+      dispatch(showToast({ message: 'Expiry Date is required', type: 'error' }))
+      return
+    }
+
+    setSubmitting(true)
+    try {
+      const payload = {
+        qtyReceivedRaw: qty,
+        unitCost: parseFloat(editReceiptForm.unitCost || 0),
+        invoiceNumber: editReceiptForm.invoiceNumber,
+        batchNumber: editReceiptForm.batchNumber,
+        ASL: editReceiptForm.ASL,
+        manufactureDate: editReceiptForm.manufactureDate || null,
+        expiryDate: editReceiptForm.expiryDate,
+        bestBeforeDate: editReceiptForm.bestBeforeDate || null,
+        notes: editReceiptForm.notes
+      }
+
+      const res = await api.put(`/warehouse-inventory/purchase-orders/receipts/${selectedReceipt.receipt_id}`, payload)
+      if (res.success) {
+        dispatch(showToast({ message: 'Stock receipt updated successfully!', type: 'success' }))
+        setEditReceiptOpen(false)
+        
+        // Refresh the detail modal content
+        if (selectedItem) {
+          const detailRes = await api.get(`/warehouse-inventory/purchase-orders/${selectedItem.po_id}`)
+          if (detailRes.success) {
+            setSelectedItem(detailRes.data)
+          }
+        }
+        
+        // Refresh the PO list
+        fetchPurchaseOrders()
+      } else {
+        dispatch(showToast({ message: res.message || 'Update failed', type: 'error' }))
+      }
+    } catch (err) {
+      dispatch(showToast({ message: 'Failed to update stock receipt', type: 'error' }))
+    } finally {
+      setSubmitting(false)
+    }
+  }
 
   const formatDateDisplay = (dateStr) => {
     if (!dateStr) return '—'
@@ -327,12 +355,16 @@ export default function PurchaseOrders() {
       return
     }
 
+    let atLeastOneReceived = false;
     for (let i = 0; i < grnForm.items.length; i++) {
       const it = grnForm.items[i]
-      if (!it.qtyReceivedRaw || parseFloat(it.qtyReceivedRaw) <= 0) {
-        dispatch(showToast({ message: `Line ${i + 1}: Valid Quantity Received is required.`, type: 'error' }))
-        return
+      const qty = parseFloat(it.qtyReceivedRaw || 0)
+      if (qty <= 0) {
+        continue
       }
+
+      atLeastOneReceived = true
+
       if (!it.batchNumber) {
         dispatch(showToast({ message: `Line ${i + 1}: Batch Number is required.`, type: 'error' }))
         return
@@ -353,10 +385,15 @@ export default function PurchaseOrders() {
         dispatch(showToast({ message: `Line ${i + 1}: ASL Coordinates is required.`, type: 'error' }))
         return
       }
-      if (!it.unitCost) {
-        dispatch(showToast({ message: `Line ${i + 1}: Unit Cost is required.`, type: 'error' }))
+      if (!it.unitCost || parseFloat(it.unitCost) <= 0) {
+        dispatch(showToast({ message: `Line ${i + 1}: Unit Cost must be > 0.`, type: 'error' }))
         return
       }
+    }
+
+    if (!atLeastOneReceived) {
+      dispatch(showToast({ message: 'Please receive at least one item with a valid quantity.', type: 'error' }))
+      return
     }
 
     setSubmitting(true)
@@ -367,17 +404,17 @@ export default function PurchaseOrders() {
         items: grnForm.items.map(it => ({
           poItemId: it.poItemId,
           variantId: it.variantId,
-          qtyReceivedRaw: parseFloat(it.qtyReceivedRaw),
+          qtyReceivedRaw: parseFloat(it.qtyReceivedRaw || 0),
           receivingUnit: it.receivingUnit,
           conversionFactor: parseFloat(it.conversionFactor || 1),
-          batchNumber: it.batchNumber,
-          manufactureDate: it.manufactureDate,
-          expiryDate: it.expiryDate,
-          bestBeforeDate: it.bestBeforeDate,
-          ASL: it.ASL,
-          unitCost: parseFloat(it.unitCost),
-          reorderLevel: parseInt(it.reorderLevel, 10),
-          reorderQty: parseInt(it.reorderQty, 10)
+          batchNumber: it.batchNumber || null,
+          manufactureDate: it.manufactureDate || null,
+          expiryDate: it.expiryDate || null,
+          bestBeforeDate: it.bestBeforeDate || null,
+          ASL: it.ASL || null,
+          unitCost: parseFloat(it.unitCost || 0),
+          reorderLevel: parseInt(it.reorderLevel || 50, 10),
+          reorderQty: parseInt(it.reorderQty || 200, 10)
         }))
       })
 
@@ -435,6 +472,7 @@ export default function PurchaseOrders() {
         if (row.status === 'completed') badgeCol = 'green'
         if (row.status === 'confirmed') badgeCol = 'blue'
         if (row.status === 'sent') badgeCol = 'yellow'
+        if (row.status === 'cancelled') badgeCol = 'red'
         return <Badge variant={badgeCol}>{row.status.toUpperCase()}</Badge>
       }
     },
@@ -453,6 +491,9 @@ export default function PurchaseOrders() {
           )}
           {row.status === 'confirmed' && (
             <Button variant="primary" size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={() => openGRNWizard(row)}>📥 Receive Goods</Button>
+          )}
+          {['draft', 'sent', 'confirmed'].includes(row.status) && (
+            <Button variant="secondary" size="sm" className="border-rose-200 text-rose-600 hover:bg-rose-50" onClick={() => advancePOStatus(row.po_id, 'cancelled')}>🚫 Cancel</Button>
           )}
         </div>
       )
@@ -494,14 +535,47 @@ export default function PurchaseOrders() {
 
       <Grid
         columns={poColumns}
-        data={purchaseOrders}
+        data={statusFilter ? purchaseOrders.filter(po => po.status === statusFilter) : purchaseOrders}
         loading={loading}
         emptyText="No Purchase Orders found for this warehouse."
         pagination={true}
         pageSize={15}
         showSearch={true}
-        searchPlaceholder="Search POs by PO number, supplier, status..."
-        searchKey={(item, query) => [item.po_number, item.supplier_name, item.status].some(v => String(v || '').toLowerCase().includes(query))}
+        searchPlaceholder="Search POs by PO number, supplier, product, SKU..."
+        searchKey={(item, query) => [
+          item.po_number,
+          item.supplier_name,
+          item.status,
+          item.product_names,
+          item.variant_skus
+        ].some(v => String(v || '').toLowerCase().includes(query))}
+        actions={
+          <select
+            value={statusFilter}
+            onChange={e => setStatusFilter(e.target.value)}
+            style={{
+              height: '42px',
+              padding: '0 12px',
+              borderRadius: '10px',
+              border: '1px solid #e2e8f0',
+              fontSize: '14px',
+              color: statusFilter ? '#1e293b' : '#94a3b8',
+              background: 'white',
+              cursor: 'pointer',
+              outline: 'none',
+              minWidth: '150px',
+              fontWeight: statusFilter ? '600' : '400'
+            }}
+          >
+            <option value="">All Statuses</option>
+            <option value="draft">Draft</option>
+            <option value="sent">Sent</option>
+            <option value="confirmed">Confirmed</option>
+            <option value="partially_received">Partially Received</option>
+            <option value="completed">Completed</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+        }
       />
 
       {/* Manual Raise Modal */}
@@ -771,7 +845,26 @@ export default function PurchaseOrders() {
         open={poDetailOpen}
         onClose={() => setPoDetailOpen(false)}
         size="lg"
-        footer={<Button variant="secondary" onClick={() => setPoDetailOpen(false)}>Close</Button>}
+        footer={
+          <div className="flex justify-between items-center w-full">
+            {selectedItem && ['draft', 'sent', 'confirmed'].includes(selectedItem.status) ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                className="border-rose-200 text-rose-600 hover:bg-rose-50"
+                onClick={() => {
+                  advancePOStatus(selectedItem.po_id, 'cancelled');
+                  setPoDetailOpen(false);
+                }}
+              >
+                🚫 Cancel Purchase Order
+              </Button>
+            ) : (
+              <div />
+            )}
+            <Button variant="secondary" onClick={() => setPoDetailOpen(false)}>Close</Button>
+          </div>
+        }
       >
         {selectedItem && (
           <div className="space-y-4">
@@ -819,6 +912,167 @@ export default function PurchaseOrders() {
                 </table>
               </div>
             </div>
+
+            {/* Receipts Log Section */}
+            {selectedItem.receipts && selectedItem.receipts.length > 0 && (
+              <div className="border-t border-slate-100 pt-3">
+                <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Stock Receipt Logs (GRN)</p>
+                <div className="bg-slate-50 border border-slate-200 rounded-xl overflow-hidden">
+                  <table className="w-full text-xs text-left">
+                    <thead className="bg-slate-100/50 border-b border-slate-200 text-slate-400 font-bold uppercase text-[9px] tracking-wider">
+                      <tr>
+                        <th className="p-3">Receipt Info</th>
+                        <th className="p-3">Product Name</th>
+                        <th className="p-3">Qty Received</th>
+                        <th className="p-3">Batch & ASL</th>
+                        <th className="p-3">Logs & Audits</th>
+                        <th className="p-3 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedItem.receipts.map((rc, rcIdx) => (
+                        <tr key={rcIdx} className="border-b border-slate-200/50">
+                          <td className="p-3 font-semibold text-slate-800">
+                            <div>#RC-{rc.receipt_id.slice(0, 6).toUpperCase()}</div>
+                            <div className="text-[10px] text-slate-400 font-mono mt-0.5">Inv: {rc.invoice_number || 'N/A'}</div>
+                          </td>
+                          <td className="p-3">
+                            <div className="font-semibold text-slate-800">{rc.product_name}</div>
+                            <div className="text-[10px] text-slate-400 mt-0.5">{rc.variant_name} (SKU: {rc.variant_sku})</div>
+                          </td>
+                          <td className="p-3">
+                            <div className="font-mono">{parseFloat(rc.qty_received_raw).toLocaleString()} {rc.receiving_unit}</div>
+                            <div className="text-[10px] text-slate-400 font-mono mt-0.5">({parseFloat(rc.qty_in_stock_unit).toLocaleString()} pcs)</div>
+                          </td>
+                          <td className="p-3">
+                            <div className="font-semibold text-slate-700">Batch: {rc.batch_number || 'N/A'}</div>
+                            <div className="text-[10px] text-slate-400 mt-0.5">ASL: {rc.asl || 'N/A'} | Exp: {formatDateDisplay(rc.expiry_date)}</div>
+                          </td>
+                          <td className="p-3">
+                            <div className="text-[10px] text-slate-500">Recv by: <strong className="text-slate-700">{rc.received_by_name || 'Admin'}</strong></div>
+                            {rc.edited_by && (
+                              <div className="text-[9px] text-amber-600 font-semibold mt-1">
+                                Edited by: {rc.edited_by_name || 'Admin'} on {formatDateDisplay(rc.edited_at)}
+                              </div>
+                            )}
+                          </td>
+                          <td className="p-3 text-right">
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              className="border-indigo-100 text-indigo-600 hover:bg-indigo-50"
+                              onClick={() => openEditReceiptWizard(rc)}
+                            >
+                              ✏️ Edit
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
+
+      {/* Edit Stock Receipt Modal */}
+      <Modal
+        title="Edit Stock Receipt Details"
+        open={editReceiptOpen}
+        onClose={() => setEditReceiptOpen(false)}
+        size="md"
+        footer={
+          <>
+            <Button variant="secondary" onClick={() => setEditReceiptOpen(false)} disabled={submitting}>Cancel</Button>
+            <Button variant="primary" loading={submitting} onClick={handleEditReceiptSubmit}>💾 Save Changes</Button>
+          </>
+        }
+      >
+        {selectedReceipt && (
+          <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs">
+              <p className="font-semibold text-slate-800">
+                Editing Receipt: <span className="font-mono text-indigo-600">#RC-{selectedReceipt.receipt_id.slice(0, 6).toUpperCase()}</span>
+              </p>
+              <p className="text-slate-400 mt-1">Item: {selectedReceipt.product_name} ({selectedReceipt.variant_sku})</p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <Input
+                label={`Qty Received (${selectedReceipt.receiving_unit || 'pcs'}) *`}
+                type="number"
+                required
+                min="0"
+                value={editReceiptForm.qtyReceivedRaw}
+                onChange={e => setEditReceiptForm(prev => ({ ...prev, qtyReceivedRaw: e.target.value }))}
+              />
+              <Input
+                label="Unit Cost (₹) *"
+                type="number"
+                required
+                min="0"
+                value={editReceiptForm.unitCost}
+                onChange={e => setEditReceiptForm(prev => ({ ...prev, unitCost: e.target.value }))}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <Input
+                label="Invoice Number"
+                placeholder="e.g. INV-998"
+                value={editReceiptForm.invoiceNumber}
+                onChange={e => setEditReceiptForm(prev => ({ ...prev, invoiceNumber: e.target.value }))}
+              />
+              <Input
+                label="Batch Number *"
+                required
+                placeholder="e.g. BATCH-001"
+                value={editReceiptForm.batchNumber}
+                onChange={e => setEditReceiptForm(prev => ({ ...prev, batchNumber: e.target.value }))}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <Input
+                label="ASL Location *"
+                required
+                placeholder="e.g. A-1-2"
+                value={editReceiptForm.ASL}
+                onChange={e => setEditReceiptForm(prev => ({ ...prev, ASL: e.target.value }))}
+              />
+              <Input
+                label="Manufacture Date"
+                type="date"
+                value={editReceiptForm.manufactureDate}
+                onChange={e => setEditReceiptForm(prev => ({ ...prev, manufactureDate: e.target.value }))}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <Input
+                label="Expiry Date *"
+                type="date"
+                required
+                value={editReceiptForm.expiryDate}
+                onChange={e => setEditReceiptForm(prev => ({ ...prev, expiryDate: e.target.value }))}
+              />
+              <Input
+                label="Best Before Date"
+                type="date"
+                value={editReceiptForm.bestBeforeDate}
+                onChange={e => setEditReceiptForm(prev => ({ ...prev, bestBeforeDate: e.target.value }))}
+              />
+            </div>
+
+            <Textarea
+              label="Notes"
+              placeholder="Reason for correction..."
+              value={editReceiptForm.notes}
+              onChange={e => setEditReceiptForm(prev => ({ ...prev, notes: e.target.value }))}
+              rows={2}
+            />
           </div>
         )}
       </Modal>

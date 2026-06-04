@@ -172,8 +172,16 @@ export default function Suppliers() {
         pagination={true}
         pageSize={15}
         showSearch={true}
-        searchPlaceholder="Search suppliers by name, code, phone, email, GST..."
-        searchKey={(item, query) => [item.name, item.supplier_code, item.phone, item.email, item.gstin].some(v => String(v || '').toLowerCase().includes(query))}
+        searchPlaceholder="Search suppliers by name, code, product, SKU, phone..."
+        searchKey={(item, query) => [
+          item.name,
+          item.supplier_code,
+          item.phone,
+          item.email,
+          item.gstin,
+          item.product_names,
+          item.variant_skus
+        ].some(v => String(v || '').toLowerCase().includes(query))}
       />
 
       {/* Manual Add/Edit Modal */}
