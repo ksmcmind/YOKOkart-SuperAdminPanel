@@ -124,6 +124,8 @@ function PollBanner({ status, onDismiss }) {
 function CategoryRow({ cat, onEdit, onAddSub, onEditSub }) {
   const [expanded, setExpanded] = useState(false)
   const subs = Array.isArray(cat.subcategories) ? cat.subcategories : []
+  const user = useSelector((state) => state.auth.user)
+  const isSuperAdmin = user?.role === 'super_admin'
 
   return (
     <>
@@ -158,12 +160,14 @@ function CategoryRow({ cat, onEdit, onAddSub, onEditSub }) {
         <td className="px-4 py-3 text-center">
           <span className="text-xs text-gray-400">{cat.sort_order ?? 0}</span>
         </td>
-        <td className="px-4 py-3">
-          <div className="flex gap-2 justify-end">
-            <Button variant="secondary" size="xs" onClick={() => onEdit(cat)}>Edit</Button>
-            <Button variant="secondary" size="xs" onClick={() => onAddSub(cat)}>+ Sub</Button>
-          </div>
-        </td>
+        {!isSuperAdmin && (
+          <td className="px-4 py-3">
+            <div className="flex gap-2 justify-end">
+              <Button variant="secondary" size="xs" onClick={() => onEdit(cat)}>Edit</Button>
+              <Button variant="secondary" size="xs" onClick={() => onAddSub(cat)}>+ Sub</Button>
+            </div>
+          </td>
+        )}
       </tr>
 
       {expanded && (
@@ -180,7 +184,7 @@ function CategoryRow({ cat, onEdit, onAddSub, onEditSub }) {
                     <th className="text-left pb-2 font-semibold">Slug</th>
                     <th className="text-left pb-2 font-semibold">Status</th>
                     <th className="text-left pb-2 font-semibold">Sort</th>
-                    <th className="pb-2" />
+                    {!isSuperAdmin && <th className="pb-2" />}
                   </tr>
                 </thead>
                 <tbody>
@@ -195,9 +199,11 @@ function CategoryRow({ cat, onEdit, onAddSub, onEditSub }) {
                         </span>
                       </td>
                       <td className="py-1.5 text-gray-400">{sub.sort_order}</td>
-                      <td className="py-1.5 text-right">
-                        <Button variant="secondary" size="xs" onClick={() => onEditSub(cat, sub)}>Edit</Button>
-                      </td>
+                      {!isSuperAdmin && (
+                        <td className="py-1.5 text-right">
+                          <Button variant="secondary" size="xs" onClick={() => onEditSub(cat, sub)}>Edit</Button>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -216,6 +222,8 @@ export default function Categories() {
   const categories = useSelector(selectAllCategories)
   const loading = useSelector(selectCategoryLoading)
   const { staffId } = useAuth()
+  const user = useSelector((state) => state.auth.user)
+  const isSuperAdmin = user?.role === 'super_admin'
 
   const [bulkOpen, setBulkOpen] = useState(false)
   const [catModal, setCatModal] = useState(false)
@@ -340,12 +348,12 @@ export default function Categories() {
       <PageHeader
         title="Categories"
         subtitle="Manage product & service hierarchies"
-        action={
+        action={!isSuperAdmin && (
           <div className="flex gap-2">
             <Button variant="secondary" onClick={() => setBulkOpen(true)}>Bulk Upload</Button>
             <Button variant="primary" onClick={openAddCat}>+ Add Category</Button>
           </div>
-        }
+        )}
       />
 
       {/* Polling banner — always visible when active */}
@@ -425,7 +433,7 @@ export default function Categories() {
               <th className="px-4 py-3 text-center text-[10px] font-bold text-gray-400 uppercase tracking-wider">Subs</th>
               <th className="px-4 py-3 text-center text-[10px] font-bold text-gray-400 uppercase tracking-wider">Status</th>
               <th className="px-4 py-3 text-center text-[10px] font-bold text-gray-400 uppercase tracking-wider">Sort</th>
-              <th className="px-4 py-3" />
+              {!isSuperAdmin && <th className="px-4 py-3" />}
             </tr>
           </thead>
           <tbody>

@@ -1,6 +1,6 @@
 // src/pages/StockTransfers.jsx
 import { useEffect, useState, useCallback, useMemo } from 'react'
-import { useDispatch } from 'react-redux'
+import { useDispatch, useSelector } from 'react-redux'
 import api from '../api/index'
 import { showToast } from '../store/slices/uiSlice'
 import PageHeader from '../components/PageHeader'
@@ -13,6 +13,8 @@ import StatCard from '../components/StatCard'
 
 export default function StockTransfers() {
   const dispatch = useDispatch()
+  const user = useSelector((state) => state.auth.user)
+  const isSuperAdmin = user?.role === 'super_admin'
 
   // Base list state
   const [warehouses, setWarehouses] = useState([])
@@ -364,7 +366,7 @@ export default function StockTransfers() {
         </div>
       )
     }
-  ]
+  ].filter(col => !isSuperAdmin || col.key !== 'actions')
 
   return (
     <div className="space-y-6">
@@ -372,14 +374,16 @@ export default function StockTransfers() {
         title="Stock Transfers & Replenishments"
         subtitle="Manage outbound warehouse dispatches, allocate cargo items, and confirm inbound mart receipt receipts."
       >
-        <Button variant="primary" onClick={() => {
-          setCreateForm({ martId: '', productId: '', variantId: '', qtyDispatched: '', notes: '' });
-          setProductSearchText('');
-          setSelectedProduct(null);
-          setCreateOpen(true);
-        }}>
-          ➕ Create Stock Transfer
-        </Button>
+        {!isSuperAdmin && (
+          <Button variant="primary" onClick={() => {
+            setCreateForm({ martId: '', productId: '', variantId: '', qtyDispatched: '', notes: '' });
+            setProductSearchText('');
+            setSelectedProduct(null);
+            setCreateOpen(true);
+          }}>
+            ➕ Create Stock Transfer
+          </Button>
+        )}
       </PageHeader>
 
       {/* Stats Summary cards */}

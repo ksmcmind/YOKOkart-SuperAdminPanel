@@ -1,6 +1,6 @@
 // src/pages/PurchaseOrders.jsx
 import { useEffect, useState, useCallback, useMemo } from 'react'
-import { useDispatch } from 'react-redux'
+import { useDispatch, useSelector } from 'react-redux'
 import api from '../api/index'
 import { showToast } from '../store/slices/uiSlice'
 import PageHeader from '../components/PageHeader'
@@ -38,6 +38,8 @@ const EMPTY_PO_FORM = {
 
 export default function PurchaseOrders() {
   const dispatch = useDispatch()
+  const user = useSelector((state) => state.auth.user)
+  const isSuperAdmin = user?.role === 'super_admin'
 
   const [warehouses, setWarehouses] = useState([])
   const [selectedWarehouseId, setSelectedWarehouseId] = useState('')
@@ -483,16 +485,16 @@ export default function PurchaseOrders() {
       render: (row) => (
         <div className="flex gap-1.5 flex-wrap">
           <Button variant="secondary" size="sm" onClick={() => openPODetails(row)}>👁️ View</Button>
-          {row.status === 'draft' && (
+          {!isSuperAdmin && row.status === 'draft' && (
             <Button variant="secondary" size="sm" className="border-yellow-200 text-yellow-600" onClick={() => advancePOStatus(row.po_id, 'sent')}>✉️ Mark Sent</Button>
           )}
-          {row.status === 'sent' && (
+          {!isSuperAdmin && row.status === 'sent' && (
             <Button variant="secondary" size="sm" className="border-blue-200 text-blue-600" onClick={() => advancePOStatus(row.po_id, 'confirmed')}>👍 Confirm PO</Button>
           )}
-          {row.status === 'confirmed' && (
+          {!isSuperAdmin && row.status === 'confirmed' && (
             <Button variant="primary" size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={() => openGRNWizard(row)}>📥 Receive Goods</Button>
           )}
-          {['draft', 'sent', 'confirmed'].includes(row.status) && (
+          {!isSuperAdmin && ['draft', 'sent', 'confirmed'].includes(row.status) && (
             <Button variant="secondary" size="sm" className="border-rose-200 text-rose-600 hover:bg-rose-50" onClick={() => advancePOStatus(row.po_id, 'cancelled')}>🚫 Cancel</Button>
           )}
         </div>
@@ -506,10 +508,12 @@ export default function PurchaseOrders() {
         title="Purchase Orders & GRN"
         subtitle="Raise procurement POs, manage vendor timelines, and execute physical supplier Goods Receipts."
       >
-        <div className="flex gap-2">
-          <Button variant="secondary" onClick={() => setPoBulkOpen(true)}>📤 Bulk PO (CSV)</Button>
-          <Button variant="primary" onClick={() => { setPoForm(EMPTY_PO_FORM); setPoOpen(true); }}>➕ Raise Purchase Order</Button>
-        </div>
+        {!isSuperAdmin && (
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={() => setPoBulkOpen(true)}>📤 Bulk PO (CSV)</Button>
+            <Button variant="primary" onClick={() => { setPoForm(EMPTY_PO_FORM); setPoOpen(true); }}>➕ Raise Purchase Order</Button>
+          </div>
+        )}
       </PageHeader>
 
       <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">

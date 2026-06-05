@@ -28,6 +28,7 @@ import Variants from './pages/Variants'
 import Suppliers from './pages/Suppliers'
 import PurchaseOrders from './pages/PurchaseOrders'
 import StockTransfers from './pages/StockTransfers'
+import Logs from './pages/Logs'
 
 // Protected route wrapper
 function Protected({ children }) {
@@ -101,6 +102,7 @@ export default function App() {
       <Route path="/suppliers" element={<Protected><Suppliers /></Protected>} />
       <Route path="/purchase-orders" element={<Protected><PurchaseOrders /></Protected>} />
       <Route path="/stock-transfers" element={<Protected><StockTransfers /></Protected>} />
+      <Route path="/logs" element={<Protected><Logs /></Protected>} />
       <Route path="/staff" element={<Protected><Staff /></Protected>} />
       <Route path="/categories" element={<Protected><Categories /></Protected>} />
       <Route path="/products" element={<Protected><Products /></Protected>} />

@@ -38,6 +38,8 @@ export default function Drivers() {
   const drivers = useSelector(selectAllDrivers)
   const loading = useSelector(selectDriversLoading)
   const error = useSelector(selectDriversError)
+  const user = useSelector((state) => state.auth.user)
+  const isSuperAdmin = user?.role === 'super_admin'
   const { activeMartId, selectorProps } = useMart()
 
   const [open, setOpen] = useState(false)
@@ -162,7 +164,7 @@ export default function Drivers() {
         </div>
       )
     }
-  ]
+  ].filter(col => !isSuperAdmin || col.key !== 'actions')
 
   return (
     <div className="p-4 sm:p-6 space-y-4">
@@ -172,7 +174,9 @@ export default function Drivers() {
         action={
           <div className="flex gap-3">
             <MartSelector {...selectorProps} />
-            <Button variant="primary" onClick={() => { setEditingDriver(null); setForm(INITIAL); setOpen(true) }}>+ Add Driver</Button>
+            {!isSuperAdmin && (
+              <Button variant="primary" onClick={() => { setEditingDriver(null); setForm(INITIAL); setOpen(true) }}>+ Add Driver</Button>
+            )}
           </div>
         }
       />

@@ -406,7 +406,7 @@ export default function Products() {
         </div>
       )
     },
-  ]
+  ].filter(col => !isSuperAdmin || col.key !== 'actions')
 
   const renderExpanded = (r) => (
     <div className="overflow-hidden rounded-lg border border-gray-100 bg-white shadow-sm">
@@ -458,7 +458,7 @@ export default function Products() {
       <PageHeader
         title="Products"
         subtitle="Manage global product catalog"
-        action={(isSuperAdmin || user?.role === 'admin') && (
+        action={(user?.role === 'admin') && (
           <div className="flex gap-2">
             <Button variant="secondary" onClick={() => setBulkOpen(true)}>Bulk Upload</Button>
             <Button variant="primary" onClick={() => { setForm(EMPTY_FORM); setIsEdit(false); setAddOpen(true) }}>+ Add Product</Button>

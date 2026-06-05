@@ -166,6 +166,9 @@ const GeoHierarchyManager = () => {
         loading,
     } = useSelector((s) => s.geo);
 
+    const user = useSelector((state) => state.auth.user);
+    const isSuperAdmin = user?.role === 'super_admin';
+
     const [activeTab, setActiveTab] = useState('nations');
     const [modal, setModal] = useState(null);
     const [editTarget, setEditTarget] = useState(null);
@@ -337,14 +340,16 @@ const GeoHierarchyManager = () => {
                     </Text>
                 </Col>
                 <Col>
-                    <Button
-                        type="primary"
-                        icon={<UploadOutlined />}
-                        onClick={() => setBulkOpen(true)}
-                        style={{ background: '#16a34a', borderColor: '#16a34a' }}
-                    >
-                        Bulk Upload CSV / XLSX
-                    </Button>
+                    {!isSuperAdmin && (
+                        <Button
+                            type="primary"
+                            icon={<UploadOutlined />}
+                            onClick={() => setBulkOpen(true)}
+                            style={{ background: '#16a34a', borderColor: '#16a34a' }}
+                        >
+                            Bulk Upload CSV / XLSX
+                        </Button>
+                    )}
                 </Col>
             </Row>
 
@@ -353,11 +358,13 @@ const GeoHierarchyManager = () => {
 
                 {/* NATIONS */}
                 <TabPane tab={<span><GlobalOutlined /> Nations</span>} key="nations">
-                    <Row justify="end" style={{ marginBottom: 12 }}>
-                        <Button type="primary" icon={<PlusOutlined />} onClick={() => setModal('nation')}>
-                            Add Nation
-                        </Button>
-                    </Row>
+                    {!isSuperAdmin && (
+                        <Row justify="end" style={{ marginBottom: 12 }}>
+                            <Button type="primary" icon={<PlusOutlined />} onClick={() => setModal('nation')}>
+                                Add Nation
+                            </Button>
+                        </Row>
+                    )}
                     <Table dataSource={nations} rowKey="_id" size="small" loading={loading.nations}
                         columns={[nameCol, { title: 'CODE', dataIndex: 'nationCode', width: 100 }, idCol]} />
                 </TabPane>
@@ -365,12 +372,14 @@ const GeoHierarchyManager = () => {
                 {/* STATES */}
                 <TabPane tab={<span><EnvironmentOutlined /> States</span>} key="states">
                     <FilterBar level="states" />
-                    <Row justify="end" style={{ marginBottom: 12 }}>
-                        <Button type="primary" icon={<PlusOutlined />} onClick={() => setModal('state')}
-                            disabled={!selectedNationId}>
-                            Add State
-                        </Button>
-                    </Row>
+                    {!isSuperAdmin && (
+                        <Row justify="end" style={{ marginBottom: 12 }}>
+                            <Button type="primary" icon={<PlusOutlined />} onClick={() => setModal('state')}
+                                disabled={!selectedNationId}>
+                                Add State
+                            </Button>
+                        </Row>
+                    )}
                     <Table dataSource={states} rowKey="_id" size="small" loading={loading.states}
                         columns={[nameCol, { title: 'CODE', dataIndex: 'stateCode', width: 100 }, idCol]} />
                 </TabPane>
@@ -378,12 +387,14 @@ const GeoHierarchyManager = () => {
                 {/* DISTRICTS */}
                 <TabPane tab="Districts" key="districts">
                     <FilterBar level="districts" />
-                    <Row justify="end" style={{ marginBottom: 12 }}>
-                        <Button type="primary" icon={<PlusOutlined />} onClick={() => setModal('district')}
-                            disabled={!selectedStateId}>
-                            Add District
-                        </Button>
-                    </Row>
+                    {!isSuperAdmin && (
+                        <Row justify="end" style={{ marginBottom: 12 }}>
+                            <Button type="primary" icon={<PlusOutlined />} onClick={() => setModal('district')}
+                                disabled={!selectedStateId}>
+                                Add District
+                            </Button>
+                        </Row>
+                    )}
                     <Table dataSource={districts} rowKey="_id" size="small" loading={loading.districts}
                         columns={[nameCol, idCol]} />
                 </TabPane>
@@ -391,12 +402,14 @@ const GeoHierarchyManager = () => {
                 {/* MANDALS */}
                 <TabPane tab="Mandals" key="mandals">
                     <FilterBar level="mandals" />
-                    <Row justify="end" style={{ marginBottom: 12 }}>
-                        <Button type="primary" icon={<PlusOutlined />} onClick={() => setModal('mandal')}
-                            disabled={!selectedDistrictId}>
-                            Add Mandal
-                        </Button>
-                    </Row>
+                    {!isSuperAdmin && (
+                        <Row justify="end" style={{ marginBottom: 12 }}>
+                            <Button type="primary" icon={<PlusOutlined />} onClick={() => setModal('mandal')}
+                                disabled={!selectedDistrictId}>
+                                Add Mandal
+                            </Button>
+                        </Row>
+                    )}
                     <Table dataSource={mandals} rowKey="_id" size="small" loading={loading.mandals}
                         columns={[nameCol, idCol]} />
                 </TabPane>
@@ -404,12 +417,14 @@ const GeoHierarchyManager = () => {
                 {/* VILLAGES */}
                 <TabPane tab={<span><HomeOutlined /> Villages</span>} key="villages">
                     <FilterBar level="villages" />
-                    <Row justify="end" style={{ marginBottom: 12 }}>
-                        <Button type="primary" icon={<PlusOutlined />} onClick={() => setModal('village')}
-                            disabled={!selectedMandalId}>
-                            Add Village
-                        </Button>
-                    </Row>
+                    {!isSuperAdmin && (
+                        <Row justify="end" style={{ marginBottom: 12 }}>
+                            <Button type="primary" icon={<PlusOutlined />} onClick={() => setModal('village')}
+                                disabled={!selectedMandalId}>
+                                Add Village
+                            </Button>
+                        </Row>
+                    )}
                     <Table dataSource={villages} rowKey="_id" size="small" loading={loading.villages}
                         columns={[
                             nameCol,
@@ -419,13 +434,13 @@ const GeoHierarchyManager = () => {
                                 width: 140,
                             },
                             idCol,
-                            {
+                            ...(!isSuperAdmin ? [{
                                 title: 'EDIT', width: 80, align: 'center',
                                 render: (r) => (
                                     <Button type="text" icon={<EditOutlined />}
                                         onClick={() => { setEditTarget(r); setModal('editVillage'); }} />
                                 ),
-                            },
+                            }] : []),
                         ]}
                     />
                 </TabPane>

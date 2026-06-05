@@ -14,6 +14,8 @@ import salesReducer from './slices/salesslice'
 import collectionsReducer from './slices/Collectionslice'
 import agentReducer from './slices/Agentslice'
 import geoReducer from './slices/Geoslice'
+import logReducer from './slices/logSlice'
+
 const store = configureStore({
   reducer: {
     auth: authReducer,
@@ -29,7 +31,8 @@ const store = configureStore({
     sales: salesReducer,
     collection: collectionsReducer,
     geo: geoReducer,
-    agents: agentReducer
+    agents: agentReducer,
+    logs: logReducer
   },
 })
 

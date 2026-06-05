@@ -32,6 +32,8 @@ const { TabPane } = Tabs;
 
 const MandalAgentManager = () => {
     const dispatch = useDispatch();
+    const user = useSelector((state) => state.auth.user);
+    const isSuperAdmin = user?.role === 'super_admin';
 
     // ── Store ─────────────────────────────────────────────────────────────────
     const {
@@ -193,21 +195,27 @@ const MandalAgentManager = () => {
                         <>
                             <Button type="text" icon={<EyeOutlined style={{ color: '#2563eb' }} />}
                                 onClick={() => openView(r)} title="View" />
-                            <Button type="text" icon={<EditOutlined />}
-                                onClick={() => openEdit(r, r.agent)} title="Edit" />
-                            <Popconfirm
-                                title="Remove this agent?"
-                                onConfirm={() => handleDelete(r._id)}
-                                icon={<QuestionCircleOutlined style={{ color: 'red' }} />}
-                            >
-                                <Button type="text" danger size="small">Remove</Button>
-                            </Popconfirm>
+                            {!isSuperAdmin && (
+                                <>
+                                    <Button type="text" icon={<EditOutlined />}
+                                        onClick={() => openEdit(r, r.agent)} title="Edit" />
+                                    <Popconfirm
+                                        title="Remove this agent?"
+                                        onConfirm={() => handleDelete(r._id)}
+                                        icon={<QuestionCircleOutlined style={{ color: 'red' }} />}
+                                    >
+                                        <Button type="text" danger size="small">Remove</Button>
+                                    </Popconfirm>
+                                </>
+                            )}
                         </>
                     ) : (
-                        <Button type="primary" ghost size="small" icon={<PlusOutlined />}
-                            onClick={() => openAdd(r)}>
-                            Assign Agent
-                        </Button>
+                        !isSuperAdmin && (
+                            <Button type="primary" ghost size="small" icon={<PlusOutlined />}
+                                onClick={() => openAdd(r)}>
+                                Assign Agent
+                            </Button>
+                        )
                     )}
                 </Space>
             ),

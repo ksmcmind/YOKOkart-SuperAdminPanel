@@ -52,6 +52,8 @@ export default function Marts() {
   const dispatch = useDispatch()
   const marts = useSelector(selectAllMarts)
   const loading = useSelector(selectMartsLoading)
+  const user = useSelector((state) => state.auth.user)
+  const isSuperAdmin = user?.role === 'super_admin'
 
   const [modalOpen, setModalOpen] = useState(false)
   const [form, setForm] = useState(EMPTY)
@@ -265,14 +267,14 @@ export default function Marts() {
         </div>
       )
     },
-  ]
+  ].filter(col => !isSuperAdmin || col.key !== 'actions')
 
   return (
     <div className="p-4 sm:p-6 space-y-4">
       <PageHeader
         title="Marts"
         subtitle="Manage dark store infrastructure"
-        action={
+        action={!isSuperAdmin && (
           <Button variant="primary" onClick={() => {
             const randomRazorpayId = 'acc_' + Math.random().toString(36).substring(2, 16).toUpperCase();
             setForm({ ...EMPTY, razorpay_id: randomRazorpayId });
@@ -281,7 +283,7 @@ export default function Marts() {
           }}>
             + Add New Mart
           </Button>
-        }
+        )}
       />
 
       <Grid columns={columns} data={marts} loading={loading} searchKey="name" />

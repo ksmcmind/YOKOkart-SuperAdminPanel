@@ -278,7 +278,7 @@ function BulkCollectionModal({ open, onClose, onDone }) {
 
 export default function Collections() {
     const dispatch = useDispatch()
-    const { isSuperAdmin } = useAuth()
+    const { user, isSuperAdmin } = useAuth()
 
     const collections = useSelector(selectAllCollections)
     const loading = useSelector(selectCollectionLoading)
@@ -420,9 +420,13 @@ export default function Collections() {
         { key: 'sortOrder', label: 'Order', render: r => <span className="text-[11px] font-mono text-gray-500">{r.sortOrder}</span> },
         {
             key: 'status', label: 'Status', render: r => (
-                <button onClick={e => { e.stopPropagation(); handleToggle(r) }}>
+                isSuperAdmin ? (
                     <Badge variant={r.isActive ? 'green' : 'red'} size="sm">{r.isActive ? 'Active' : 'Inactive'}</Badge>
-                </button>
+                ) : (
+                    <button onClick={e => { e.stopPropagation(); handleToggle(r) }}>
+                        <Badge variant={r.isActive ? 'green' : 'red'} size="sm">{r.isActive ? 'Active' : 'Inactive'}</Badge>
+                    </button>
+                )
             ),
         },
         {
@@ -432,7 +436,7 @@ export default function Collections() {
                 </div>
             ),
         },
-    ]
+    ].filter(col => !isSuperAdmin || col.key !== 'actions')
 
     // Expanded row: shows subcategory cards
     const renderExpanded = (r) => (
@@ -470,7 +474,7 @@ export default function Collections() {
             <PageHeader
                 title="Collections"
                 subtitle="Manage home screen tab bar — All, Groceries, Legal, Doctors..."
-                action={isSuperAdmin && (
+                action={(user?.role === 'admin') && (
                     <div className="flex gap-2">
                         <Button variant="secondary" onClick={() => setBulkOpen(true)}>Bulk Create</Button>
                         <Button variant="primary" onClick={() => { setForm(EMPTY_FORM); setIsEdit(false); setAddOpen(true) }}>+ Add Collection</Button>

@@ -1,6 +1,6 @@
 // src/pages/Warehouses.jsx
 import { useEffect, useState } from 'react'
-import { useDispatch } from 'react-redux'
+import { useDispatch, useSelector } from 'react-redux'
 import { showToast } from '../store/slices/uiSlice'
 import PageHeader from '../components/PageHeader'
 import Button from '../components/Button'
@@ -22,6 +22,9 @@ const EMPTY = {
 
 export default function Warehouses() {
   const dispatch = useDispatch()
+  const user = useSelector((state) => state.auth.user)
+  const isSuperAdmin = user?.role === 'super_admin'
+
   const [warehouses, setWarehouses] = useState([])
   const [staff, setStaff] = useState([])
   const [loading, setLoading] = useState(false)
@@ -211,18 +214,18 @@ export default function Warehouses() {
         </div>
       )
     }
-  ]
+  ].filter(col => !isSuperAdmin || col.key !== 'actions')
 
   return (
     <div className="p-4 sm:p-6 space-y-4">
       <PageHeader
         title="Warehouses"
         subtitle="Manage central warehouses and facility staff assignments"
-        action={
+        action={!isSuperAdmin && (
           <Button variant="primary" onClick={() => { setForm(EMPTY); setEditingWarehouse(null); setOpen(true) }}>
             + Add Warehouse
           </Button>
-        }
+        )}
       />
 
       <Grid

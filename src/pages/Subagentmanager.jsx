@@ -36,6 +36,8 @@ const { TabPane } = Tabs;
 
 const SubAgentManager = () => {
     const dispatch = useDispatch();
+    const user = useSelector((state) => state.auth.user);
+    const isSuperAdmin = user?.role === 'super_admin';
 
     const {
         nations, states, districts, mandals, villages,
@@ -204,7 +206,7 @@ const SubAgentManager = () => {
             },
         },
         {
-            title: 'ACTION', align: 'right', width: 150,
+            title: 'ACTION', align: 'right', width: 150, key: 'action',
             render: (v) => (
                 <Button type="primary" ghost size="small" icon={<UserAddOutlined />}
                     onClick={() => openAdd(v)}>
@@ -212,7 +214,7 @@ const SubAgentManager = () => {
                 </Button>
             ),
         },
-    ];
+    ].filter(col => !isSuperAdmin || col.key !== 'action');
 
     // ── Expanded sub-agent columns ────────────────────────────────────────────
     const subAgentColumns = (village) => [
@@ -227,19 +229,23 @@ const SubAgentManager = () => {
             width: 110,
         },
         {
-            title: 'ACTION', align: 'right', width: 180,
+            title: 'ACTION', align: 'right', width: 180, key: 'action',
             render: (a) => (
                 <Space size="small">
                     <Button type="text" icon={<EyeOutlined style={{ color: '#2563eb' }} />}
                         onClick={() => openView(village, a)} />
-                    <Button type="text" icon={<EditOutlined />}
-                        onClick={() => openEdit(village, a)} />
-                    <Button type="text" icon={<DollarOutlined style={{ color: '#16a34a' }} />}
-                        onClick={() => openCommission(a)} title="Commission" />
-                    <Popconfirm title="Remove sub-agent?" onConfirm={() => handleDelete(village._id, a.agent_code)}
-                        icon={<QuestionCircleOutlined style={{ color: 'red' }} />}>
-                        <Button type="text" danger size="small">Remove</Button>
-                    </Popconfirm>
+                    {!isSuperAdmin && (
+                        <>
+                            <Button type="text" icon={<EditOutlined />}
+                                onClick={() => openEdit(village, a)} />
+                            <Button type="text" icon={<DollarOutlined style={{ color: '#16a34a' }} />}
+                                onClick={() => openCommission(a)} title="Commission" />
+                            <Popconfirm title="Remove sub-agent?" onConfirm={() => handleDelete(village._id, a.agent_code)}
+                                icon={<QuestionCircleOutlined style={{ color: 'red' }} />}>
+                                <Button type="text" danger size="small">Remove</Button>
+                            </Popconfirm>
+                        </>
+                    )}
                 </Space>
             ),
         },
@@ -489,21 +495,23 @@ const SubAgentManager = () => {
             >
                 {activeAgent && (
                     <>
-                        <Form form={commForm} layout="inline" onFinish={handleAddCommission}
-                            style={{ marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
-                            <Form.Item name="orderId" rules={[{ required: true }]}>
-                                <Input placeholder="Order ID" style={{ width: 160 }} />
-                            </Form.Item>
-                            <Form.Item name="amount" rules={[{ required: true }]}>
-                                <InputNumber placeholder="Amount ₹" min={0} style={{ width: 120 }} />
-                            </Form.Item>
-                            <Form.Item name="notes">
-                                <Input placeholder="Notes (optional)" style={{ width: 160 }} />
-                            </Form.Item>
-                            <Form.Item>
-                                <Button type="primary" htmlType="submit" icon={<DollarOutlined />}>Add</Button>
-                            </Form.Item>
-                        </Form>
+                        {!isSuperAdmin && (
+                            <Form form={commForm} layout="inline" onFinish={handleAddCommission}
+                                style={{ marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
+                                <Form.Item name="orderId" rules={[{ required: true }]}>
+                                    <Input placeholder="Order ID" style={{ width: 160 }} />
+                                </Form.Item>
+                                <Form.Item name="amount" rules={[{ required: true }]}>
+                                    <InputNumber placeholder="Amount ₹" min={0} style={{ width: 120 }} />
+                                </Form.Item>
+                                <Form.Item name="notes">
+                                    <Input placeholder="Notes (optional)" style={{ width: 160 }} />
+                                </Form.Item>
+                                <Form.Item>
+                                    <Button type="primary" htmlType="submit" icon={<DollarOutlined />}>Add</Button>
+                                </Form.Item>
+                            </Form>
+                        )}
 
                         <Table
                             dataSource={agentCommissions}
@@ -520,7 +528,7 @@ const SubAgentManager = () => {
                                 { title: 'Date', dataIndex: 'created_at', render: (d) => new Date(d).toLocaleDateString() },
                                 {
                                     title: 'Action',
-                                    render: (r) => r.status === 'pending'
+                                    render: (r) => (r.status === 'pending' && !isSuperAdmin)
                                         ? <Button size="small" type="primary" ghost
                                             onClick={() => dispatch(payCommission(r.id))}>Mark Paid</Button>
                                         : null,

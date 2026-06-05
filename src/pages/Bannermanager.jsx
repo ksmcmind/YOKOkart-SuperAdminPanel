@@ -134,7 +134,7 @@ function BannerForm({ initial, onSave, onCancel, saving }) {
 
 // ─── CARD ────────────────────────────────────────────────────
 
-function BannerCard({ banner, onEdit, onDelete, onToggle }) {
+function BannerCard({ banner, onEdit, onDelete, onToggle, isSuperAdmin }) {
     const [confirmDel, setConfirmDel] = useState(false);
     
     const slotColors = { hero: "orange", mid: "purple", bottom: "blue", popup: "pink" };
@@ -169,25 +169,27 @@ function BannerCard({ banner, onEdit, onDelete, onToggle }) {
 
                 <div className="flex items-center justify-between pt-2 border-t border-gray-50">
                     <div className="flex items-center gap-2">
-                        <label className="relative inline-flex items-center cursor-pointer">
-                            <input type="checkbox" className="sr-only peer" checked={banner.isActive} onChange={() => onToggle(banner.id, !banner.isActive)} />
+                        <label className={`relative inline-flex items-center ${isSuperAdmin ? "cursor-not-allowed" : "cursor-pointer"}`}>
+                            <input type="checkbox" className="sr-only peer" checked={banner.isActive} onChange={() => onToggle(banner.id, !banner.isActive)} disabled={isSuperAdmin} />
                             <div className="w-8 h-4 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-green-500"></div>
                         </label>
                         <span className={`text-[10px] font-bold uppercase ${banner.isActive ? "text-green-600" : "text-gray-400"}`}>
                             {banner.isActive ? "Active" : "Inactive"}
                         </span>
                     </div>
-                    <div className="flex gap-1.5">
-                        <button onClick={() => onEdit(banner)} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-primary-600 transition-colors">
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-5M16.242 16.242L19.414 13.086a2 2 0 012.828 0l2.828 2.828a2 2 0 010 2.828l-3.172 3.172a2 2 0 01-2.828 0l-2.828-2.828a2 2 0 010-2.828z" /></svg>
-                        </button>
-                        {confirmDel
-                            ? <button onClick={() => onDelete(banner.id)} onMouseLeave={() => setConfirmDel(false)} className="px-2 py-1 bg-red-50 text-red-600 text-[10px] font-bold rounded-lg border border-red-100">Sure?</button>
-                            : <button onClick={() => setConfirmDel(true)} className="p-1.5 hover:bg-red-50 rounded-lg text-gray-400 hover:text-red-500 transition-colors">
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                              </button>
-                        }
-                    </div>
+                    {!isSuperAdmin && (
+                        <div className="flex gap-1.5">
+                            <button onClick={() => onEdit(banner)} className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-primary-600 transition-colors">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-5M16.242 16.242L19.414 13.086a2 2 0 012.828 0l2.828 2.828a2 2 0 010 2.828l-3.172 3.172a2 2 0 01-2.828 0l-2.828-2.828a2 2 0 010-2.828z" /></svg>
+                            </button>
+                            {confirmDel
+                                ? <button onClick={() => onDelete(banner.id)} onMouseLeave={() => setConfirmDel(false)} className="px-2 py-1 bg-red-50 text-red-600 text-[10px] font-bold rounded-lg border border-red-100">Sure?</button>
+                                : <button onClick={() => setConfirmDel(true)} className="p-1.5 hover:bg-red-50 rounded-lg text-gray-400 hover:text-red-500 transition-colors">
+                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                  </button>
+                            }
+                        </div>
+                    )}
                 </div>
             </div>
         </div>
@@ -203,6 +205,8 @@ export default function BannerManager() {
     const loading = useSelector(selectLoading);
     const saving = useSelector(selectSaving);
     const error = useSelector(selectError);
+    const user = useSelector((state) => state.auth.user);
+    const isSuperAdmin = user?.role === 'super_admin';
 
     const [showCreate, setShowCreate] = useState(false);
     const [editTarget, setEditTarget] = useState(null);
@@ -237,11 +241,11 @@ export default function BannerManager() {
             <PageHeader
                 title="Banner Management"
                 subtitle="Manage promotional banners for app & web"
-                action={
+                action={!isSuperAdmin && (
                     <div className="flex gap-2">
                         <Button variant="primary" onClick={() => setShowCreate(true)}>+ New Banner</Button>
                     </div>
-                }
+                )}
             />
 
             {/* Selection & Filters */}
@@ -323,6 +327,7 @@ export default function BannerManager() {
                                         onEdit={setEditTarget} 
                                         onDelete={handleDelete} 
                                         onToggle={handleToggle} 
+                                        isSuperAdmin={isSuperAdmin}
                                     />
                                 ))}
                             </div>

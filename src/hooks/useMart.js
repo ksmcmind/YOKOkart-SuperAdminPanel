@@ -7,16 +7,16 @@ import { selectAllMarts } from '../store/slices/martSlice'
 import useAuth from './useAuth'
 
 export default function useMart() {
-  const { martId: tokenMartId, isSuperAdmin } = useAuth()
+  const { martId: tokenMartId, isSuperAdmin, canSelectMart } = useAuth()
   const marts = useSelector(selectAllMarts)
   const [selectedMartId, setSelectedMartId] = useState('')
 
   // Default to first mart if nothing selected
-  const effectiveSelectedId = selectedMartId || (isSuperAdmin && marts[0]?.id) || ''
+  const effectiveSelectedId = selectedMartId || (canSelectMart && marts[0]?.id) || ''
 
-  // For super admin — selectedMartId is mongo_mart_id from dropdown
+  // For platform admins — selectedMartId is mongo_mart_id from dropdown
   // For others — find their mart by matching tokenMartId against mart id or mongo_mart_id
-  const activeMartId = isSuperAdmin
+  const activeMartId = canSelectMart
     ? effectiveSelectedId
     : marts.find(m => m.id === tokenMartId)?.id || tokenMartId
 
@@ -27,9 +27,10 @@ export default function useMart() {
     activeMart,
     marts,
     isSuperAdmin,
+    canSelectMart,
     selectedMartId,
     setSelectedMartId,
-    selectorProps: isSuperAdmin ? {
+    selectorProps: canSelectMart ? {
       show: true,
       value: effectiveSelectedId,
       onChange: setSelectedMartId,

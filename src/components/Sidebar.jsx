@@ -13,6 +13,7 @@ const NAV = [
     { to: '/suppliers', label: 'Suppliers', icon: '👥' },
     { to: '/purchase-orders', label: 'Purchase Orders', icon: '✉️' },
     { to: '/stock-transfers', label: 'Stock Transfers', icon: '🚚' },
+    { to: '/logs', label: 'Activity Logs', icon: '📜' },
     { to: '/staff', label: 'Staff', icon: '👥' },
     // { to: '/collections', label: 'Collections', icon: '💰' },
     // { to: '/categories', label: 'Categories', icon: '🗂️' },
@@ -36,6 +37,7 @@ export default function Sidebar() {
     const dispatch = useDispatch()
     const user = useSelector(selectUser)
     const [collapsed, setCollapsed] = useState(false)
+    const isSuperAdmin = user?.role === 'super_admin'
 
     return (
         <aside className={`${collapsed ? 'w-20' : 'w-60'} bg-white border-r border-gray-100 flex flex-col h-screen sticky top-0 transition-all duration-300 z-50`}>
@@ -64,7 +66,12 @@ export default function Sidebar() {
 
             {/* Navigation */}
             <nav className="flex-1 p-3 space-y-1 overflow-y-auto overflow-x-hidden">
-                {NAV.map(item => (
+                {NAV.filter(item => {
+                    if (isSuperAdmin && (item.to === '/brand-bulk-upload' || item.to === '/variant-bulk-upload')) {
+                        return false
+                    }
+                    return true
+                }).map(item => (
                     <NavLink
                         key={item.to}
                         to={item.to}

@@ -1,6 +1,6 @@
 // src/pages/Suppliers.jsx
 import { useEffect, useState } from 'react'
-import { useDispatch } from 'react-redux'
+import { useDispatch, useSelector } from 'react-redux'
 import api from '../api/index'
 import { showToast } from '../store/slices/uiSlice'
 import PageHeader from '../components/PageHeader'
@@ -13,6 +13,8 @@ import BulkUploadModal from '../components/BulkUploadModal'
 
 export default function Suppliers() {
   const dispatch = useDispatch()
+  const user = useSelector((state) => state.auth.user)
+  const isSuperAdmin = user?.role === 'super_admin'
   const [suppliers, setSuppliers] = useState([])
   const [loading, setLoading] = useState(false)
   const [statusTab, setStatusTab] = useState('active') // 'active' | 'inactive'
@@ -135,7 +137,7 @@ export default function Suppliers() {
         </div>
       )
     }
-  ]
+  ].filter(col => !isSuperAdmin || col.key !== 'actions')
 
   return (
     <div className="space-y-6">
@@ -143,10 +145,12 @@ export default function Suppliers() {
         title="Suppliers Directory"
         subtitle="Manage active supply vendors, contact profiles, and tax identifiers."
       >
-        <div className="flex gap-2">
-          <Button variant="secondary" onClick={() => setBulkOpen(true)}>📤 Bulk Import (CSV)</Button>
-          <Button variant="primary" onClick={() => { setEditingSupplier(null); setForm({ supplier_code: '', name: '', phone: '', email: '', address: '', gstin: '' }); setAddOpen(true); }}>➕ Add Supplier</Button>
-        </div>
+        {!isSuperAdmin && (
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={() => setBulkOpen(true)}>📤 Bulk Import (CSV)</Button>
+            <Button variant="primary" onClick={() => { setEditingSupplier(null); setForm({ supplier_code: '', name: '', phone: '', email: '', address: '', gstin: '' }); setAddOpen(true); }}>➕ Add Supplier</Button>
+          </div>
+        )}
       </PageHeader>
 
       <div className="flex border-b border-gray-100 gap-4">

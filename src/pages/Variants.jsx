@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from 'react'
-import { useDispatch } from 'react-redux'
+import { useDispatch, useSelector } from 'react-redux'
 import PageHeader from '../components/PageHeader'
 import Button from '../components/Button'
 import Grid from '../components/Grid'
@@ -11,6 +11,9 @@ import api from '../api/index'
 
 export default function Variants() {
   const dispatch = useDispatch()
+  const user = useSelector((state) => state.auth.user)
+  const isSuperAdmin = user?.role === 'super_admin'
+
   const [variants, setVariants] = useState([])
   const [loading, setLoading] = useState(false)
   const [open, setOpen] = useState(false)
@@ -236,18 +239,18 @@ export default function Variants() {
         </div>
       )
     }
-  ]
+  ].filter(col => !isSuperAdmin || col.key !== 'actions')
 
   return (
     <div className="p-4 sm:p-6 space-y-4">
       <PageHeader
         title="Product Variants"
         subtitle="Manage product packaging details, barcodes, and specs"
-        action={
+        action={!isSuperAdmin && (
           <Button variant="primary" onClick={() => window.location.href = '/variant-bulk-upload'}>
             🧬 Variant Bulk Upload
           </Button>
-        }
+        )}
       />
 
       {/* Brand-only and Suggestions Search FilterBar */}

@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import {
   fetchStaff, createStaff, updateStaff, toggleStaffStatus,
-  selectAllStaff, selectStaffLoading,
+  selectAllStaff, selectStaffLoading, selectStaffError, clearStaffError
 } from '../store/slices/staffSlice'
 import { fetchMarts, selectAllMarts } from '../store/slices/martSlice'
 import { showToast } from '../store/slices/uiSlice'
@@ -16,16 +16,36 @@ import Input, { Select } from '../components/Input'
 import ImageUpload from '../components/ImageUpload'
 
 const ROLES = [
+  { value: 'super_admin', label: 'Super Admin' },
+  { value: 'admin', label: 'Admin' },
   { value: 'mart_admin', label: 'Mart Admin' },
   { value: 'manager', label: 'Manager' },
-  { value: 'dispatcher', label: 'Dispatcher' },
-  { value: 'stock_manager', label: 'Stock Manager' },
   { value: 'cashier', label: 'Cashier' },
   { value: 'packing_staff', label: 'Packing Staff' },
   { value: 'accountant', label: 'Accountant' },
   { value: 'support', label: 'Support' },
+  { value: 'warehouse_admin', label: 'Warehouse Admin' },
   { value: 'warehouse_manager', label: 'Warehouse Manager' },
+  { value: 'dispatcher', label: 'Dispatcher' },
+  { value: 'stock_manager', label: 'Stock Manager' },
+  { value: 'inbound_staff', label: 'Inbound Staff' },
+  { value: 'outbound_staff', label: 'Outbound Staff' },
+  { value: 'inventory_auditor', label: 'Inventory Auditor' },
+  { value: 'returns_handler', label: 'Returns Handler' },
 ]
+
+const WAREHOUSE_ROLES = [
+  'warehouse_admin',
+  'warehouse_manager',
+  'dispatcher',
+  'stock_manager',
+  'inbound_staff',
+  'outbound_staff',
+  'inventory_auditor',
+  'returns_handler'
+]
+
+const PLATFORM_ROLES = ['super_admin', 'admin']
 
 const EMPTY = {
   name: '', phone: '', email: '', role: 'mart_admin',
@@ -45,6 +65,7 @@ export default function Staff() {
   const dispatch = useDispatch()
   const staff = useSelector(selectAllStaff)
   const loading = useSelector(selectStaffLoading)
+  const error = useSelector(selectStaffError)
   const marts = useSelector(selectAllMarts)
 
   const [open, setOpen] = useState(false)
@@ -65,6 +86,13 @@ export default function Staff() {
       })
       .catch(err => console.error('Failed to load warehouses:', err))
   }, [dispatch])
+
+  useEffect(() => {
+    if (error) {
+      dispatch(showToast({ message: error, type: 'error' }))
+      dispatch(clearStaffError())
+    }
+  }, [error, dispatch])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
@@ -87,11 +115,11 @@ export default function Staff() {
     if (!form.name || !form.phone) {
       dispatch(showToast({ message: 'Name and phone required', type: 'error' })); return
     }
-    if (form.role === 'warehouse_manager') {
+    if (WAREHOUSE_ROLES.includes(form.role)) {
       if (!form.warehouseId) {
-        dispatch(showToast({ message: 'Warehouse is required for warehouse manager', type: 'error' })); return
+        dispatch(showToast({ message: 'Warehouse is required for warehouse staff', type: 'error' })); return
       }
-    } else if (form.role !== 'super_admin' && !form.martId) {
+    } else if (!PLATFORM_ROLES.includes(form.role) && !form.martId) {
       dispatch(showToast({ message: 'Mart required for this role', type: 'error' })); return
     }
     
@@ -108,8 +136,8 @@ export default function Staff() {
         phone: form.phone,
         email: form.email,
         role: form.role,
-        martId: (form.role === 'super_admin' || form.role === 'warehouse_manager') ? null : form.martId,
-        warehouseId: form.role === 'warehouse_manager' ? form.warehouseId : null,
+        martId: (PLATFORM_ROLES.includes(form.role) || WAREHOUSE_ROLES.includes(form.role)) ? null : form.martId,
+        warehouseId: WAREHOUSE_ROLES.includes(form.role) ? form.warehouseId : null,
         basicSalary: parseFloat(form.basicSalary) || 0,
         ...(profileImage && { profileImage }),
         ...(panImage && { panImage }),
@@ -119,12 +147,15 @@ export default function Staff() {
       const action = editingStaff ? updateStaff({ id: editingStaff.id, data: payload }) : createStaff(payload)
       const res = await dispatch(action)
 
-      if (!res.error) {
-        dispatch(showToast({ message: editingStaff ? 'Staff updated!' : 'Staff created!', type: 'success' }))
+      if (res.error) {
+        const errorMsg = res.payload || res.error?.message || 'Failed to save staff'
+        dispatch(showToast({ message: errorMsg, type: 'error' }))
+      } else {
+        dispatch(showToast({ message: editingStaff ? 'Staff updated successfully!' : 'Staff created successfully!', type: 'success' }))
         setOpen(false); setForm(EMPTY); setEditingStaff(null)
       }
     } catch (err) {
-      dispatch(showToast({ message: err.message, type: 'error' }))
+      dispatch(showToast({ message: err.message || 'Something went wrong', type: 'error' }))
     } finally {
       setSaving(false)
     }
@@ -141,6 +172,11 @@ export default function Staff() {
           <div className="leading-tight">
             <p className="text-xs font-bold text-gray-900">{r.name}</p>
             <p className="text-[10px] text-gray-500 font-mono">{r.phone}</p>
+            {r.staff_code && (
+              <p className="text-[9px] text-primary-600 font-black bg-primary-50/50 px-1 py-0.5 rounded mt-0.5 inline-block border border-primary-100">
+                Emp ID: {r.staff_code}
+              </p>
+            )}
           </div>
         </div>
       )
@@ -150,8 +186,8 @@ export default function Staff() {
     {
       key: 'facility', label: 'Facility',
       render: r => {
-        if (r.role === 'super_admin') return <span className="text-[9px] bg-purple-50 text-purple-600 px-1.5 py-0.5 rounded font-black uppercase tracking-tighter border border-purple-100">Super Admin</span>
-        if (r.role === 'warehouse_manager') {
+        if (PLATFORM_ROLES.includes(r.role)) return <span className="text-[9px] bg-purple-50 text-purple-600 px-1.5 py-0.5 rounded font-black uppercase tracking-tighter border border-purple-100">{r.role?.replace(/_/g, ' ').toUpperCase()}</span>
+        if (WAREHOUSE_ROLES.includes(r.role)) {
           const w = warehouses.find(w => w.warehouse_id === r.warehouseId)
           return <span className="text-[10px] text-primary-600 font-semibold uppercase tracking-tighter">🏭 {w?.name || 'Warehouse'}</span>
         }
@@ -228,12 +264,12 @@ export default function Staff() {
               <Select label="System Role *" value={form.role} onChange={e => set('role', e.target.value)}>
                 {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
               </Select>
-              {form.role === 'warehouse_manager' ? (
+              {WAREHOUSE_ROLES.includes(form.role) ? (
                 <Select label="Assign to Warehouse *" value={form.warehouseId} onChange={e => set('warehouseId', e.target.value)}>
                   <option value="">Select Warehouse</option>
                   {warehouses.map(w => <option key={w.warehouse_id} value={w.warehouse_id}>{w.name}</option>)}
                 </Select>
-              ) : form.role !== 'super_admin' ? (
+              ) : !PLATFORM_ROLES.includes(form.role) ? (
                 <Select label="Assign to Mart *" value={form.martId} onChange={e => set('martId', e.target.value)}>
                   <option value="">Select Mart</option>
                   {marts.map(m => (
