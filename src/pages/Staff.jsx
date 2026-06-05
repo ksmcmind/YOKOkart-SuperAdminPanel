@@ -94,7 +94,16 @@ export default function Staff() {
     } else if (form.role !== 'super_admin' && !form.martId) {
       dispatch(showToast({ message: 'Mart required for this role', type: 'error' })); return
     }
+<<<<<<< Updated upstream
     
+=======
+
+    // Mandatory images for new staff
+    if (!editingStaff && (!form.profileImageFile || !form.panImageFile || !form.aadhaarImageFile)) {
+      dispatch(showToast({ message: 'Profile Photo, PAN Card, and Aadhaar Card are all mandatory', type: 'error' })); return
+    }
+
+>>>>>>> Stashed changes
     setSaving(true)
     try {
       const [profileImage, panImage, aadhaarImage] = await Promise.all([
@@ -189,11 +198,19 @@ export default function Staff() {
         loading={loading}
         searchKey="name"
         actions={
-          <div className="flex gap-1 overflow-x-auto pb-2 scrollbar-hide max-w-xl">
-            <button onClick={() => setMartFilter('')} className={`px-3 py-1 rounded-full text-[10px] font-bold whitespace-nowrap transition-colors ${!martFilter ? 'bg-primary-600 text-white shadow-md shadow-primary-200' : 'bg-white border border-gray-200 text-gray-500 hover:bg-gray-50'}`}>ALL STAFF</button>
-            {marts.map(m => (
-              <button key={m.mongo_mart_id} onClick={() => setMartFilter(m.mongo_mart_id)} className={`px-3 py-1 rounded-full text-[10px] font-bold whitespace-nowrap transition-colors ${martFilter === m.mongo_mart_id ? 'bg-primary-600 text-white shadow-md shadow-primary-200' : 'bg-white border border-gray-200 text-gray-500 hover:bg-gray-50'}`}>{m.name.toUpperCase()}</button>
-            ))}
+          <div className="w-48 sm:w-64">
+            <select
+              value={martFilter}
+              onChange={(e) => setMartFilter(e.target.value)}
+              className="w-full text-xs font-bold border border-gray-200 rounded-lg bg-white text-gray-700 outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 px-3 py-2"
+            >
+              <option value="">ALL STAFF (ACROSS MARTS)</option>
+              {marts.map(m => (
+                <option key={m.mongo_mart_id} value={m.mongo_mart_id}>
+                  {m.name.toUpperCase()}
+                </option>
+              ))}
+            </select>
           </div>
         }
       />
@@ -248,8 +265,8 @@ export default function Staff() {
 
           <section className="bg-gray-50/50 p-6 rounded-2xl border border-gray-100 shadow-sm">
             <h4 className="text-[10px] font-black text-gray-500 uppercase tracking-widest mb-4 flex items-center gap-2">
-               <span className="w-4 h-4 bg-gray-200 rounded-full flex items-center justify-center text-[8px]">3</span>
-               KYC Verification
+              <span className="w-4 h-4 bg-gray-200 rounded-full flex items-center justify-center text-[8px]">3</span>
+              KYC Verification
             </h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <ImageUpload label="PAN Card" value={form.panImageFile} onChange={file => set('panImageFile', file)} />
