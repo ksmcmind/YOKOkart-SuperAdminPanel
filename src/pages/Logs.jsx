@@ -195,7 +195,7 @@ export default function Logs() {
       label: 'Type',
       render: r => {
         const typeLabels = {
-          supplier_delivery: { label: 'SUPPLIER DELIVERY', var: 'green' },
+          supplier_delivery: { label: 'CARGO IN', var: 'green' },
           dispatch: { label: 'DISPATCH TO MART', var: 'blue' },
           adjustment: { label: 'ADJUSTMENT', var: 'yellow' },
           void: { label: 'VOID ORDER', var: 'red' },
@@ -227,7 +227,36 @@ export default function Logs() {
     {
       key: 'reason',
       label: 'Reason / Notes',
-      render: r => <span className="text-xs text-gray-500 italic max-w-xs block truncate" title={r.reason}>{r.reason || '—'}</span>
+      render: r => {
+        let displayVal = r.reason || '-';
+        if (r.type === 'dispatch') {
+          const martInfo = r.mart_name 
+            ? `${r.mart_name}${r.mart_code ? ` (${r.mart_code})` : ''}`
+            : (r.mart_code || 'Mart');
+          displayVal = `Dispatch to ${martInfo}${r.transfer_notes ? ` - ${r.transfer_notes}` : ''}`;
+        } else if (r.type === 'adjustment') {
+          if (r.reason && r.reason.startsWith('Edit stock receipt #')) {
+            const invoicePart = r.receipt_invoice_number ? `Invoice: ${r.receipt_invoice_number}` : '';
+            const poPart = r.receipt_po_number ? `PO: ${r.receipt_po_number}` : '';
+            displayVal = `Stock Receipt Edit [${[invoicePart, poPart].filter(Boolean).join(' | ') || 'Edited details'}]`;
+          } else {
+            if (!displayVal || displayVal.trim() === '') {
+              displayVal = '-';
+            }
+          }
+        } else if (r.type === 'supplier_delivery' || r.type === 'grn_received' || r.type === 'grn') {
+          const supplierInfo = r.supplier_name 
+            ? `${r.supplier_name}${r.supplier_code ? ` (${r.supplier_code})` : ''}`
+            : (r.supplier_code || '');
+          const cleanReason = (r.reason && !r.reason.startsWith('Received PO') && r.reason !== 'Supplier delivery') ? r.reason : '';
+          displayVal = `GRN from ${supplierInfo || 'Supplier'}${cleanReason ? ` - ${cleanReason}` : ''}`;
+        } else {
+          if (!displayVal || displayVal.trim() === '') {
+            displayVal = '-';
+          }
+        }
+        return <span className="text-xs text-gray-500 italic max-w-xs block truncate" title={displayVal}>{displayVal}</span>
+      }
     }
   ]
 

@@ -1,4 +1,3 @@
-// src/pages/Staff.jsx
 import { useEffect, useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import {
@@ -6,6 +5,7 @@ import {
   selectAllStaff, selectStaffLoading, selectStaffError, clearStaffError
 } from '../store/slices/staffSlice'
 import { fetchMarts, selectAllMarts } from '../store/slices/martSlice'
+import { fetchWarehouses, selectAllWarehouses } from '../store/slices/warehouseSlice'
 import { showToast } from '../store/slices/uiSlice'
 import PageHeader from '../components/PageHeader'
 import Button from '../components/Button'
@@ -67,24 +67,21 @@ export default function Staff() {
   const loading = useSelector(selectStaffLoading)
   const error = useSelector(selectStaffError)
   const marts = useSelector(selectAllMarts)
+  const warehouses = useSelector(selectAllWarehouses)
 
   const [open, setOpen] = useState(false)
   const [editingStaff, setEditingStaff] = useState(null)
   const [form, setForm] = useState(EMPTY)
   const [saving, setSaving] = useState(false)
   const [martFilter, setMartFilter] = useState('')
-  const [warehouses, setWarehouses] = useState([])
+  const [statusFilter, setStatusFilter] = useState('all')
+  const [deactivateStaff, setDeactivateStaff] = useState(null)
+  const [deactivateReason, setDeactivateReason] = useState('')
 
   useEffect(() => {
     dispatch(fetchMarts())
     dispatch(fetchStaff())
-    
-    fetch('/api/warehouses')
-      .then(res => res.json())
-      .then(json => {
-        if (json.success) setWarehouses(json.data || [])
-      })
-      .catch(err => console.error('Failed to load warehouses:', err))
+    dispatch(fetchWarehouses())
   }, [dispatch])
 
   useEffect(() => {
@@ -122,16 +119,11 @@ export default function Staff() {
     } else if (!PLATFORM_ROLES.includes(form.role) && !form.martId) {
       dispatch(showToast({ message: 'Mart required for this role', type: 'error' })); return
     }
-<<<<<<< Updated upstream
-    
-=======
-
     // Mandatory images for new staff
     if (!editingStaff && (!form.profileImageFile || !form.panImageFile || !form.aadhaarImageFile)) {
       dispatch(showToast({ message: 'Profile Photo, PAN Card, and Aadhaar Card are all mandatory', type: 'error' })); return
     }
 
->>>>>>> Stashed changes
     setSaving(true)
     try {
       const [profileImage, panImage, aadhaarImage] = await Promise.all([
@@ -206,11 +198,34 @@ export default function Staff() {
     },
     { key: 'salary', label: 'Salary', render: r => <span className="text-xs font-bold text-gray-700">₹{parseFloat(r.basic_salary || 0).toLocaleString()}</span> },
     {
+      key: 'deactivation_reason',
+      label: 'Deactivation Reason',
+      render: r => !r.is_active ? (
+        <div className="text-[10px] leading-tight">
+          <p className="font-bold text-red-500">{r.deactivation_reason || 'No reason specified'}</p>
+          {r.deactivated_at && (
+            <p className="text-[9px] text-gray-400 font-mono mt-0.5">
+              {new Date(r.deactivated_at).toLocaleDateString()}
+            </p>
+          )}
+        </div>
+      ) : <span className="text-gray-400">—</span>
+    },
+    {
       key: 'actions', label: '',
       render: r => (
         <div className="flex justify-end gap-2">
           <button onClick={() => handleEdit(r)} className="text-[10px] text-gray-600 font-black hover:bg-gray-100 px-2 py-1 rounded transition-colors uppercase tracking-tighter">Edit</button>
-          <button onClick={() => dispatch(toggleStaffStatus(r.id))} className={`text-[10px] font-black px-2 py-1 rounded transition-colors uppercase tracking-tighter ${r.is_active ? 'text-red-600 hover:bg-red-50' : 'text-green-600 hover:bg-green-50'}`}>
+          <button 
+            onClick={() => {
+              if (r.is_active) {
+                setDeactivateStaff(r)
+              } else {
+                dispatch(toggleStaffStatus(r.id))
+              }
+            }} 
+            className={`text-[10px] font-black px-2 py-1 rounded transition-colors uppercase tracking-tighter ${r.is_active ? 'text-red-600 hover:bg-red-50' : 'text-green-600 hover:bg-green-50'}`}
+          >
             {r.is_active ? 'Disable' : 'Enable'}
           </button>
         </div>
@@ -218,7 +233,12 @@ export default function Staff() {
     }
   ]
 
-  const filtered = martFilter ? staff.filter(s => s.mongo_mart_id === martFilter) : staff
+  let filtered = martFilter ? staff.filter(s => s.mongo_mart_id === martFilter) : staff
+  if (statusFilter === 'active') {
+    filtered = filtered.filter(s => s.is_active)
+  } else if (statusFilter === 'inactive') {
+    filtered = filtered.filter(s => !s.is_active)
+  }
 
   return (
     <div className="p-4 sm:p-6 space-y-4">
@@ -234,11 +254,20 @@ export default function Staff() {
         loading={loading}
         searchKey="name"
         actions={
-          <div className="w-48 sm:w-64">
+          <div className="flex gap-2 w-full justify-end">
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="text-xs font-bold border border-gray-200 rounded-lg bg-white text-gray-700 outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 px-3 py-2"
+            >
+              <option value="all">ALL STATUS</option>
+              <option value="active">ACTIVE ONLY</option>
+              <option value="inactive">INACTIVE ONLY</option>
+            </select>
             <select
               value={martFilter}
               onChange={(e) => setMartFilter(e.target.value)}
-              className="w-full text-xs font-bold border border-gray-200 rounded-lg bg-white text-gray-700 outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 px-3 py-2"
+              className="text-xs font-bold border border-gray-200 rounded-lg bg-white text-gray-700 outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 px-3 py-2"
             >
               <option value="">ALL STAFF (ACROSS MARTS)</option>
               {marts.map(m => (
@@ -309,6 +338,57 @@ export default function Staff() {
               <ImageUpload label="Aadhaar Card" value={form.aadhaarImageFile} onChange={file => set('aadhaarImageFile', file)} />
             </div>
           </section>
+        </div>
+      </Modal>
+
+      {/* Deactivation Reason Modal */}
+      <Modal
+        open={!!deactivateStaff}
+        onClose={() => {
+          setDeactivateStaff(null)
+          setDeactivateReason('')
+        }}
+        title={`Deactivate Staff: ${deactivateStaff?.name}`}
+        size="md"
+        footer={
+          <>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setDeactivateStaff(null)
+                setDeactivateReason('')
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              onClick={() => {
+                dispatch(
+                  toggleStaffStatus({
+                    id: deactivateStaff.id,
+                    deactivation_reason: deactivateReason,
+                  })
+                )
+                setDeactivateStaff(null)
+                setDeactivateReason('')
+              }}
+            >
+              Confirm Deactivation
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4 py-2">
+          <p className="text-xs text-gray-600 font-medium">
+            Please provide a reason for deactivating this staff member. This will be displayed on their profile.
+          </p>
+          <Input
+            label="Deactivation Reason"
+            placeholder="e.g. Resigned, Performance issues, Relocation"
+            value={deactivateReason}
+            onChange={(e) => setDeactivateReason(e.target.value)}
+          />
         </div>
       </Modal>
     </div>

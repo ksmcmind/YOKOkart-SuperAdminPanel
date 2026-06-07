@@ -4,6 +4,7 @@ import authReducer from './slices/authSlice'
 import uiReducer from './slices/uiSlice'
 import martReducer from './slices/martSlice'
 import staffReducer from './slices/staffSlice'
+import warehouseReducer from './slices/warehouseSlice'
 import categoryReducer from './slices/categorySlice'
 import productReducer from './slices/productSlice'
 import orderReducer from './slices/orderSlice'
@@ -22,6 +23,7 @@ const store = configureStore({
     ui: uiReducer,
     mart: martReducer,
     staff: staffReducer,
+    warehouse: warehouseReducer,
     category: categoryReducer,
     product: productReducer,
     order: orderReducer,

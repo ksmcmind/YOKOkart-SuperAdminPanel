@@ -5,6 +5,8 @@ import {
   fetchMarts, createMart, toggleMartStatus, updateMart,
   selectAllMarts, selectMartsLoading,
 } from '../store/slices/martSlice'
+import { fetchStaff, selectAllStaff } from '../store/slices/staffSlice'
+import { fetchWarehouses, selectAllWarehouses } from '../store/slices/warehouseSlice'
 import { showToast } from '../store/slices/uiSlice'
 import PageHeader from '../components/PageHeader'
 import Button from '../components/Button'
@@ -59,26 +61,14 @@ export default function Marts() {
   const [form, setForm] = useState(EMPTY)
   const [editingMart, setEditingMart] = useState(null)
   const [saving, setSaving] = useState(false)
-  const [warehouses, setWarehouses] = useState([])
-  const [staff, setStaff] = useState([])
-
-  useEffect(() => { dispatch(fetchMarts()) }, [dispatch])
+  const warehouses = useSelector(selectAllWarehouses)
+  const staff = useSelector(selectAllStaff)
 
   useEffect(() => {
-    fetch('/api/warehouses')
-      .then(res => res.json())
-      .then(json => {
-        if (json.success) setWarehouses(json.data || [])
-      })
-      .catch(err => console.error('Failed to load warehouses:', err))
-
-    fetch('/api/staff')
-      .then(res => res.json())
-      .then(json => {
-        if (json.success) setStaff(json.data || [])
-      })
-      .catch(err => console.error('Failed to load staff:', err))
-  }, [])
+    dispatch(fetchMarts())
+    dispatch(fetchWarehouses())
+    dispatch(fetchStaff())
+  }, [dispatch])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
@@ -198,12 +188,16 @@ export default function Marts() {
       key: 'manager', label: 'Manager details',
       render: r => {
         const matchedManager = staff.find(s => (s.role === 'manager' || s.role === 'mart_admin') && s.martId === r.id)
-        if (matchedManager) {
+        const name = matchedManager?.name || r.manager_name
+        const phone = matchedManager?.phone || r.manager_phone
+        const email = matchedManager?.email || r.manager_email
+        
+        if (name) {
           return (
             <div className="text-[10px] leading-tight">
-              <p className="font-bold text-gray-800">{matchedManager.name}</p>
-              <p className="text-gray-500 font-mono mt-0.5">📞 {matchedManager.phone}</p>
-              {matchedManager.email && <p className="text-gray-400 mt-0.5">✉️ {matchedManager.email}</p>}
+              <p className="font-bold text-gray-800">{name}</p>
+              {phone && <p className="text-gray-500 font-mono mt-0.5">📞 {phone}</p>}
+              {email && <p className="text-gray-400 mt-0.5">✉️ {email}</p>}
             </div>
           )
         }

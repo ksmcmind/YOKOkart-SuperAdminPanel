@@ -9,6 +9,14 @@ export const fetchStaff = createAsyncThunk(
     const res = await api.get(url)
     if (!res.success) return rejectWithValue(res.message)
     return res.data
+  },
+  {
+    condition: (martId, { getState }) => {
+      // If we are filtering by a specific mart, we should fetch. Otherwise, check cache.
+      if (martId) return true
+      const { staff } = getState()
+      if (staff.list.length > 0 && !staff.loading) return false
+    }
   }
 )
 
@@ -32,8 +40,10 @@ export const updateStaff = createAsyncThunk(
 
 export const toggleStaffStatus = createAsyncThunk(
   'staff/toggle',
-  async (staffId, { rejectWithValue }) => {
-    const res = await api.patch(`/staff/${staffId}/toggle`)
+  async (arg, { rejectWithValue }) => {
+    const id = typeof arg === 'object' ? arg.id : arg
+    const data = typeof arg === 'object' ? { deactivation_reason: arg.deactivation_reason } : null
+    const res = await api.patch(`/staff/${id}/toggle`, data)
     if (!res.success) return rejectWithValue(res.message)
     return res.data
   }
@@ -72,7 +82,7 @@ const staffSlice = createSlice({
     builder
       .addCase(toggleStaffStatus.fulfilled, (state, action) => {
         const idx = state.list.findIndex(s => s.id === action.payload.id)
-        if (idx !== -1) state.list[idx].is_active = action.payload.is_active
+        if (idx !== -1) state.list[idx] = action.payload
       })
   },
 })

@@ -1,6 +1,11 @@
 // src/pages/Warehouses.jsx
 import { useEffect, useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
+import {
+  fetchWarehouses, createWarehouse, updateWarehouse, toggleWarehouseStatus,
+  selectAllWarehouses, selectWarehouseLoading
+} from '../store/slices/warehouseSlice'
+import { fetchStaff, selectAllStaff } from '../store/slices/staffSlice'
 import { showToast } from '../store/slices/uiSlice'
 import PageHeader from '../components/PageHeader'
 import Button from '../components/Button'
@@ -25,35 +30,19 @@ export default function Warehouses() {
   const user = useSelector((state) => state.auth.user)
   const isSuperAdmin = user?.role === 'super_admin'
 
-  const [warehouses, setWarehouses] = useState([])
-  const [staff, setStaff] = useState([])
-  const [loading, setLoading] = useState(false)
+  const warehouses = useSelector(selectAllWarehouses)
+  const staff = useSelector(selectAllStaff)
+  const loading = useSelector(selectWarehouseLoading)
+
   const [open, setOpen] = useState(false)
   const [editingWarehouse, setEditingWarehouse] = useState(null)
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState(EMPTY)
 
-  const loadData = async () => {
-    setLoading(true)
-    try {
-      const res = await fetch('/api/warehouses')
-      const json = await res.json()
-      if (json.success) setWarehouses(json.data || [])
-
-      const staffRes = await fetch('/api/staff')
-      const staffJson = await staffRes.json()
-      if (staffJson.success) setStaff(staffJson.data || [])
-    } catch (err) {
-      console.error('Failed to load data:', err)
-      dispatch(showToast({ message: 'Failed to load page data', type: 'error' }))
-    } finally {
-      setLoading(false)
-    }
-  }
-
   useEffect(() => {
-    loadData()
-  }, [])
+    dispatch(fetchWarehouses())
+    dispatch(fetchStaff())
+  }, [dispatch])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
@@ -96,24 +85,21 @@ export default function Warehouses() {
         manager_email: editingWarehouse ? editingWarehouse.manager_email : null,
       }
 
-      const url = editingWarehouse ? `/api/warehouses/${editingWarehouse.warehouse_id}` : '/api/warehouses'
-      const method = editingWarehouse ? 'PUT' : 'POST'
+      let res
+      if (editingWarehouse) {
+        res = await dispatch(updateWarehouse({ id: editingWarehouse.warehouse_id, data: payload }))
+      } else {
+        res = await dispatch(createWarehouse(payload))
+      }
 
-      const res = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-      const json = await res.json()
-
-      if (json.success) {
+      if (!res.error) {
         dispatch(showToast({ message: editingWarehouse ? 'Warehouse updated!' : 'Warehouse registered!', type: 'success' }))
         setOpen(false)
         setForm(EMPTY)
         setEditingWarehouse(null)
-        loadData()
       } else {
-        dispatch(showToast({ message: json.message || 'Operation failed', type: 'error' }))
+        const errorMsg = res.payload || res.error?.message || 'Operation failed'
+        dispatch(showToast({ message: errorMsg, type: 'error' }))
       }
     } catch (err) {
       dispatch(showToast({ message: err.message, type: 'error' }))
@@ -122,19 +108,14 @@ export default function Warehouses() {
     }
   }
 
-  const toggleWarehouseStatus = async (w) => {
+  const handleToggleStatus = async (w) => {
     try {
-      const res = await fetch(`/api/warehouses/${w.warehouse_id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ is_active: !w.is_active }),
-      })
-      const json = await res.json()
-      if (json.success) {
+      const res = await dispatch(toggleWarehouseStatus({ id: w.warehouse_id, is_active: !w.is_active }))
+      if (!res.error) {
         dispatch(showToast({ message: 'Status updated!', type: 'success' }))
-        loadData()
       } else {
-        dispatch(showToast({ message: json.message || 'Failed to update status', type: 'error' }))
+        const errorMsg = res.payload || res.error?.message || 'Failed to update status'
+        dispatch(showToast({ message: errorMsg, type: 'error' }))
       }
     } catch (err) {
       dispatch(showToast({ message: err.message, type: 'error' }))
@@ -160,12 +141,16 @@ export default function Warehouses() {
       key: 'manager', label: 'Manager details',
       render: r => {
         const matchedManager = staff.find(s => s.role === 'warehouse_manager' && s.warehouseId === r.warehouse_id)
-        if (matchedManager) {
+        const name = matchedManager?.name || r.manager_name
+        const phone = matchedManager?.phone || r.manager_phone
+        const email = matchedManager?.email || r.manager_email
+        
+        if (name) {
           return (
             <div className="text-[10px] leading-tight">
-              <p className="font-bold text-gray-800">{matchedManager.name}</p>
-              <p className="text-gray-500 font-mono mt-0.5">📞 {matchedManager.phone}</p>
-              {matchedManager.email && <p className="text-gray-400 mt-0.5">✉️ {matchedManager.email}</p>}
+              <p className="font-bold text-gray-800">{name}</p>
+              {phone && <p className="text-gray-500 font-mono mt-0.5">📞 {phone}</p>}
+              {email && <p className="text-gray-400 mt-0.5">✉️ {email}</p>}
             </div>
           )
         }
@@ -207,7 +192,7 @@ export default function Warehouses() {
           <Button
             variant={r.is_active ? 'danger' : 'success'}
             size="sm"
-            onClick={() => toggleWarehouseStatus(r)}
+            onClick={() => handleToggleStatus(r)}
           >
             {r.is_active ? 'Disable' : 'Enable'}
           </Button>

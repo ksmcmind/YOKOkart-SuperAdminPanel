@@ -16,6 +16,7 @@ const request = async (method, path, body = null) => {
         headers: {
             ...(!isFormData && { 'Content-Type': 'application/json' }),
             'X-Client-Type': 'web', // Tell backend to use cookies
+            'X-Target-App': 'super-admin', // Tell backend we are super-admin
             ...(token && { 'Authorization': `Bearer ${token}` }),
         },
     }

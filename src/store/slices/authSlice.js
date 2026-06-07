@@ -7,28 +7,36 @@ import api from '../../api/index'
 export const sendOtp = createAsyncThunk(
   'auth/sendOtp',
   async (phone, { rejectWithValue }) => {
-    const res = await api.post('/auth/send-otp', { phone, userType: 'staff' })
-    if (!res.success) return rejectWithValue(res.message)
-    return res.data
+    try {
+      const res = await api.post('/auth/send-otp', { phone, userType: 'staff' })
+      if (!res.success) return rejectWithValue(res.message || 'Failed to send OTP')
+      return res.data
+    } catch (err) {
+      return rejectWithValue(err.message || 'Network error')
+    }
   }
 )
 
 export const verifyOtp = createAsyncThunk(
   'auth/verifyOtp',
   async ({ phone, otp }, { rejectWithValue }) => {
-    const res = await api.post('/auth/verify-otp', { phone, otp, userType: 'staff' })
-    if (!res.success) return rejectWithValue(res.message)
+    try {
+      const res = await api.post('/auth/verify-otp', { phone, otp, userType: 'staff' })
+      if (!res.success) return rejectWithValue(res.message || 'Invalid OTP')
 
-    if (res.data.user.role !== 'super_admin' && res.data.user.role !== 'admin') {
-      return rejectWithValue('Access denied.')
-    }
+      if (res.data.user.role !== 'super_admin' && res.data.user.role !== 'admin') {
+        return rejectWithValue('Access denied.')
+      }
 
-    // Note: token is set in HttpOnly cookie by backend
-    localStorage.setItem('ksmcm_super_admin_user',  JSON.stringify(res.data.user))
-    if (res.data.token) {
-      localStorage.setItem('ksmcm_super_admin_token', res.data.token)
+      // Note: token is set in HttpOnly cookie by backend
+      localStorage.setItem('ksmcm_super_admin_user',  JSON.stringify(res.data.user))
+      if (res.data.token) {
+        localStorage.setItem('ksmcm_super_admin_token', res.data.token)
+      }
+      return res.data
+    } catch (err) {
+      return rejectWithValue(err.message || 'Network error')
     }
-    return res.data
   }
 )
 
