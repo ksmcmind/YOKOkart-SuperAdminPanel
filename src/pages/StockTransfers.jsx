@@ -28,7 +28,7 @@ export default function StockTransfers() {
   const [createOpen, setCreateOpen] = useState(false)
   const [receiveOpen, setReceiveOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
-  
+
   const [selectedTransfer, setSelectedTransfer] = useState(null)
 
   // Filter state
@@ -42,7 +42,7 @@ export default function StockTransfers() {
     qtyDispatched: '',
     notes: ''
   })
-  
+
   const [productSearchText, setProductSearchText] = useState('')
   const [productDropdownOpen, setProductDropdownOpen] = useState(false)
   const [selectedProduct, setSelectedProduct] = useState(null)
@@ -64,7 +64,7 @@ export default function StockTransfers() {
     });
     return Array.from(map.values());
   }, [warehouseInventory]);
-  
+
   const [receiveForm, setReceiveForm] = useState({
     qtyReceived: ''
   })
@@ -125,7 +125,7 @@ export default function StockTransfers() {
   const fetchWarehouseInventory = async () => {
     if (!selectedWarehouseId) return
     try {
-      const res = await api.get(`/warehouse-inventory/warehouse/${selectedWarehouseId}?limit=5000`)
+      const res = await api.get(`/warehouse-inventory/warehouse/${selectedWarehouseId}?limit=6000`)
       if (res.success) {
         setWarehouseInventory(res.data || [])
       }
@@ -435,11 +435,10 @@ export default function StockTransfers() {
           <button
             key={tab}
             onClick={() => setStatusFilter(tab)}
-            className={`px-4 py-2 text-xs font-bold transition-all duration-150 border-b-2 -mb-px ${
-              statusFilter === tab
-                ? 'border-primary-600 text-primary-600'
-                : 'border-transparent text-slate-400 hover:text-slate-600'
-            }`}
+            className={`px-4 py-2 text-xs font-bold transition-all duration-150 border-b-2 -mb-px ${statusFilter === tab
+              ? 'border-primary-600 text-primary-600'
+              : 'border-transparent text-slate-400 hover:text-slate-600'
+              }`}
           >
             {tab.toUpperCase()}
           </button>

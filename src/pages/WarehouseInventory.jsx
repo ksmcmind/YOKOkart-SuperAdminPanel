@@ -1,5 +1,5 @@
 // src/pages/WarehouseInventory.jsx
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { useDispatch } from 'react-redux'
 import api from '../api/index'
 import { showToast } from '../store/slices/uiSlice'
@@ -89,8 +89,8 @@ function PaginationBar({ pagination, onPageChange, itemsPerPage, setItemsPerPage
         </span>
         <div className="flex items-center gap-2">
           <span className="text-xs text-slate-400">Per Page:</span>
-          <select 
-            value={itemsPerPage} 
+          <select
+            value={itemsPerPage}
             onChange={e => setItemsPerPage(Number(e.target.value))}
             className="text-xs border border-slate-200 rounded px-2 py-1 bg-white font-medium text-slate-600 focus:outline-none cursor-pointer"
           >
@@ -126,8 +126,8 @@ function PaginationBar({ pagination, onPageChange, itemsPerPage, setItemsPerPage
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-1.5">
           <span className="text-xs text-slate-400">Rows:</span>
-          <select 
-            value={itemsPerPage} 
+          <select
+            value={itemsPerPage}
             onChange={e => setItemsPerPage(Number(e.target.value))}
             className="text-xs border border-slate-200 rounded px-2 py-1 bg-white font-semibold text-slate-600 focus:outline-none cursor-pointer"
           >
@@ -138,8 +138,8 @@ function PaginationBar({ pagination, onPageChange, itemsPerPage, setItemsPerPage
         </div>
 
         <div className="flex items-center gap-1">
-          <button 
-            onClick={() => onPageChange(page - 1)} 
+          <button
+            onClick={() => onPageChange(page - 1)}
             disabled={page <= 1}
             className="px-2.5 py-1.5 text-xs font-bold border border-slate-200 rounded-xl hover:border-primary-300 hover:text-primary-600 disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200 bg-white shadow-sm"
           >
@@ -148,19 +148,19 @@ function PaginationBar({ pagination, onPageChange, itemsPerPage, setItemsPerPage
           {getPages().map((p, i) =>
             p === '...'
               ? <span key={`e${i}`} className="px-1 text-xs text-slate-400">…</span>
-              : <button 
-                  key={p} 
-                  onClick={() => onPageChange(p)}
-                  className={`w-8 h-8 text-xs font-bold rounded-xl border transition-all duration-200 ${p === page
-                    ? 'bg-primary-600 border-primary-600 text-white shadow-md scale-105'
-                    : 'border-slate-200 bg-white text-slate-600 hover:border-primary-300 hover:text-primary-600'
+              : <button
+                key={p}
+                onClick={() => onPageChange(p)}
+                className={`w-8 h-8 text-xs font-bold rounded-xl border transition-all duration-200 ${p === page
+                  ? 'bg-primary-600 border-primary-600 text-white shadow-md scale-105'
+                  : 'border-slate-200 bg-white text-slate-600 hover:border-primary-300 hover:text-primary-600'
                   }`}
-                >
-                  {p}
-                </button>
+              >
+                {p}
+              </button>
           )}
-          <button 
-            onClick={() => onPageChange(page + 1)} 
+          <button
+            onClick={() => onPageChange(page + 1)}
             disabled={page >= total_pages}
             className="px-2.5 py-1.5 text-xs font-bold border border-slate-200 rounded-xl hover:border-primary-300 hover:text-primary-600 disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-200 bg-white shadow-sm"
           >
@@ -175,14 +175,15 @@ function PaginationBar({ pagination, onPageChange, itemsPerPage, setItemsPerPage
 
 export default function WarehouseInventory() {
   const dispatch = useDispatch()
-  
+  const summaryCacheRef = useRef({})
+
   // Base State
   const [warehouses, setWarehouses] = useState([])
   const [selectedWarehouseId, setSelectedWarehouseId] = useState('')
   const [activeTab, setActiveTab] = useState('summary') // 'summary' | 'batches'
   const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
-  
+
   // Catalog Products (only loaded once for single restock variant selector lookup)
   const [catalogProducts, setCatalogProducts] = useState([])
 
@@ -221,6 +222,7 @@ export default function WarehouseInventory() {
   const [summaryFilter, setSummaryFilter] = useState('all') // 'all' | 'expiring_soon' | 'low_stock'
   const [summaryPage, setSummaryPage] = useState(1)
   const [summaryLimit, setSummaryLimit] = useState(25)
+  const [summaryPagination, setSummaryPagination] = useState({ page: 1, limit: 25, total: 0, total_pages: 0 })
 
   // Filters (Tab 2 Batches Specific)
   const [batchFilter, setBatchFilter] = useState('expiring_soon') // 'all' | 'expiring_soon' | 'expired' | 'low_stock'
@@ -282,13 +284,35 @@ export default function WarehouseInventory() {
     }
   }
 
-  const fetchInventory = async () => {
+  const fetchInventory = async (forceRefresh = false) => {
     if (!selectedWarehouseId) return
+
+    const cacheKey = `${selectedWarehouseId}_p${summaryPage}_l${summaryLimit}_f${summaryFilter}_s${search}`
+    const cached = summaryCacheRef.current[cacheKey]
+    const now = Date.now()
+
+    if (!forceRefresh && cached && (now - cached.timestamp < 60000)) {
+      setInventory(cached.data)
+      setSummaryPagination(cached.pagination)
+      return
+    }
+
     setLoading(true)
     try {
-      const res = await api.get(`/warehouse-inventory/warehouse/${selectedWarehouseId}?limit=5000`)
+      const q = `?page=${summaryPage}&limit=${summaryLimit}&filter=${summaryFilter}` + (search ? `&search=${encodeURIComponent(search)}` : '')
+      const res = await api.get(`/warehouse-inventory/warehouse/${selectedWarehouseId}${q}`)
       if (res.success) {
-        setInventory(res.data || [])
+        const data = res.data || []
+        const pagination = res.pagination || { page: 1, limit: 25, total: 0, total_pages: 0 }
+
+        setInventory(data)
+        setSummaryPagination(pagination)
+
+        summaryCacheRef.current[cacheKey] = {
+          data,
+          pagination,
+          timestamp: now
+        }
       }
     } catch (err) {
       console.error(err)
@@ -303,7 +327,7 @@ export default function WarehouseInventory() {
     setLoading(true)
     try {
       const expiringSoon = batchFilter === 'expiring_soon' ? '&expiring_soon=true' : ''
-      const expiredOnly  = batchFilter === 'expired'        ? '&expired_only=true'  : ''
+      const expiredOnly = batchFilter === 'expired' ? '&expired_only=true' : ''
       const q = `?page=${batchesPage}&limit=${batchesLimit}${expiringSoon}${expiredOnly}` + (search ? `&search=${encodeURIComponent(search)}` : '')
       const res = await api.get(`/warehouse-inventory/warehouse/${selectedWarehouseId}/batches${q}`)
       if (res.success) {
@@ -329,15 +353,29 @@ export default function WarehouseInventory() {
     if (!selectedWarehouseId) return
     fetchSummaryStats()
     if (activeTab === 'summary') {
-      fetchInventory()
+      fetchInventory(false)
     } else if (activeTab === 'batches') {
       fetchBatches()
     }
-  }, [selectedWarehouseId, activeTab, batchesPage, batchesLimit])
+  }, [selectedWarehouseId, activeTab, batchesPage, batchesLimit, summaryPage, summaryLimit])
+
+  const invalidateSummaryCacheAndRefresh = useCallback(() => {
+    summaryCacheRef.current = {}
+    refreshActiveTabData()
+  }, [refreshActiveTabData])
 
   useEffect(() => {
     refreshActiveTabData()
   }, [refreshActiveTabData])
+
+  // Debounced search/filter trigger for summary tab
+  useEffect(() => {
+    if (activeTab !== 'summary') return
+    const delayDebounce = setTimeout(() => {
+      fetchInventory(false)
+    }, 400)
+    return () => clearTimeout(delayDebounce)
+  }, [search, activeTab, summaryFilter])
 
   // Debounced search/filter trigger for batches tab
   useEffect(() => {
@@ -363,7 +401,7 @@ export default function WarehouseInventory() {
       + "product_code,variant_code,batch_number,qty_received,expiry_date,stock_unit,asl,unit_cost,manufacture_date,best_before_date,reorder_level,reorder_qty\n"
       + `${catalogProducts[0]?.product_code || "PRD-CADBURY-1"},${catalogProducts[0]?.variants?.[0]?.variant_code || "VAR-CADBURY-1-V1"},BATCH-SUP-A,150,29-12-2026,pcs,A2-S3-L1,45.00,15-05-2026,29-11-2026,50,200\n`
       + `${catalogProducts[1]?.product_code || "PRD-AMUL-2"},${catalogProducts[1]?.variants?.[0]?.variant_code || "VAR-AMUL-2-V1"},BATCH-SUP-B,1000,15-08-2026,kg,B1-S2-L2,120.00,01-04-2026,15-07-2026,100,500\n`;
-    
+
     const encodedUri = encodeURI(csvContent)
     const link = document.createElement("a")
     link.setAttribute("href", encodedUri)
@@ -416,9 +454,8 @@ export default function WarehouseInventory() {
   }, [inventory, search, summaryFilter]);
 
   const paginatedSummaryData = useMemo(() => {
-    const start = (summaryPage - 1) * summaryLimit;
-    return processedInventory.slice(start, start + summaryLimit);
-  }, [processedInventory, summaryPage, summaryLimit]);
+    return inventory;
+  }, [inventory]);
 
   // Client-side filter for low_stock batches (expiring/expired handled by API)
   const displayedBatches = useMemo(() => {
@@ -499,7 +536,7 @@ export default function WarehouseInventory() {
         dispatch(showToast({ message: `Received ${computedQty} ${restockForm.stockUnit} stock successfully!`, type: 'success' }));
         setRestockOpen(false);
         setRestockForm(EMPTY_RESTOCK_FORM);
-        refreshActiveTabData();
+        invalidateSummaryCacheAndRefresh();
       } else {
         dispatch(showToast({ message: res.message || 'Restock failed', type: 'error' }));
       }
@@ -537,7 +574,7 @@ export default function WarehouseInventory() {
         dispatch(showToast({ message: 'Batch stock adjusted successfully!', type: 'success' }));
         setAdjustOpen(false);
         setAdjustForm({ qtyChange: '', mode: 'add', reason: '' });
-        refreshActiveTabData();
+        invalidateSummaryCacheAndRefresh();
       } else {
         dispatch(showToast({ message: res.message || 'Adjustment failed', type: 'error' }));
       }
@@ -580,7 +617,7 @@ export default function WarehouseInventory() {
       dispatch(showToast({ message: 'Please add at least one line item.', type: 'error' }));
       return;
     }
-    
+
     // Check fields
     for (const item of poForm.items) {
       if (!item.variantId || !item.qtyOrdered || !item.unitCost) {
@@ -608,7 +645,7 @@ export default function WarehouseInventory() {
         dispatch(showToast({ message: 'Purchase order generated successfully!', type: 'success' }));
         setPoOpen(false);
         setPoForm(EMPTY_PO_FORM);
-        refreshActiveTabData();
+        invalidateSummaryCacheAndRefresh();
       } else {
         dispatch(showToast({ message: res.message || 'PO creation failed', type: 'error' }));
       }
@@ -659,7 +696,7 @@ export default function WarehouseInventory() {
           reorderLevel: '50',
           reorderQty: '200'
         }));
-        
+
         setGrnForm({ invoiceNumber: '', notes: '', items: grnItems });
         setGrnOpen(true);
       }
@@ -682,7 +719,7 @@ export default function WarehouseInventory() {
       dispatch(showToast({ message: 'Invoice Number is strictly required.', type: 'error' }));
       return;
     }
-    
+
     // Check mandatory fields
     for (let i = 0; i < grnForm.items.length; i++) {
       const it = grnForm.items[i];
@@ -741,7 +778,7 @@ export default function WarehouseInventory() {
       if (res.success) {
         dispatch(showToast({ message: 'Goods received and batch inventory created successfully!', type: 'success' }));
         setGrnOpen(false);
-        refreshActiveTabData();
+        invalidateSummaryCacheAndRefresh();
       } else {
         dispatch(showToast({ message: res.message || 'Goods receiving failed', type: 'error' }));
       }
@@ -962,11 +999,11 @@ export default function WarehouseInventory() {
           <StatCard label="Total SKUs" value={summaryStats.total_skus} icon="🧬" color="blue" sub="Total unique catalog items stocked" />
           <StatCard label="Active Batches" value={summaryStats.total_batches} icon="📦" color="gray" sub="Total physical batch groups in shelves" />
           <StatCard label="Available Stock" value={summaryStats.total_available.toLocaleString()} icon="📊" color="green" sub="Net sellable units across all batches" />
-          <StatCard 
-            label="Low Stock Alerts" 
-            value={summaryStats.out_of_stock_skus} 
-            icon="⚠️" 
-            color={summaryStats.out_of_stock_skus > 0 ? "red" : "gray"} 
+          <StatCard
+            label="Low Stock Alerts"
+            value={summaryStats.out_of_stock_skus}
+            icon="⚠️"
+            color={summaryStats.out_of_stock_skus > 0 ? "red" : "gray"}
             sub="SKUs at or below their reorder level"
             onClick={() => setAlertsOpen(true)}
           />
@@ -1010,22 +1047,21 @@ export default function WarehouseInventory() {
             {activeTab === 'summary' && (
               <div className="flex items-center gap-2 flex-wrap">
                 {[
-                  { id: 'all',          label: 'All',           emoji: '📦' },
-                  { id: 'expiring_soon',label: 'Expiring Soon', emoji: '⏳' },
-                  { id: 'low_stock',    label: 'Low Stock',     emoji: '⚠️' },
+                  { id: 'all', label: 'All', emoji: '📦' },
+                  { id: 'expiring_soon', label: 'Expiring Soon', emoji: '⏳' },
+                  { id: 'low_stock', label: 'Low Stock', emoji: '⚠️' },
                 ].map(f => (
                   <button
                     key={f.id}
                     onClick={() => setSummaryFilter(f.id)}
-                    className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold border transition-all duration-150 whitespace-nowrap ${
-                      summaryFilter === f.id
-                        ? f.id === 'expiring_soon'
-                          ? 'bg-orange-500 border-orange-500 text-white shadow-sm'
-                          : f.id === 'low_stock'
-                            ? 'bg-rose-500 border-rose-500 text-white shadow-sm'
-                            : 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
-                        : 'bg-white border-slate-200 text-slate-600 hover:border-slate-400'
-                    }`}
+                    className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold border transition-all duration-150 whitespace-nowrap ${summaryFilter === f.id
+                      ? f.id === 'expiring_soon'
+                        ? 'bg-orange-500 border-orange-500 text-white shadow-sm'
+                        : f.id === 'low_stock'
+                          ? 'bg-rose-500 border-rose-500 text-white shadow-sm'
+                          : 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
+                      : 'bg-white border-slate-200 text-slate-600 hover:border-slate-400'
+                      }`}
                   >
                     {f.emoji} {f.label}
                   </button>
@@ -1038,24 +1074,23 @@ export default function WarehouseInventory() {
               <div className="flex items-center gap-2 flex-wrap">
                 {[
                   { id: 'expiring_soon', label: 'Expiring Soon', emoji: '⏳' },
-                  { id: 'all',           label: 'All Batches',   emoji: '📦' },
-                  { id: 'expired',       label: 'Expired',       emoji: '🚫' },
-                  { id: 'low_stock',     label: 'Low Stock',     emoji: '⚠️' },
+                  { id: 'all', label: 'All Batches', emoji: '📦' },
+                  { id: 'expired', label: 'Expired', emoji: '🚫' },
+                  { id: 'low_stock', label: 'Low Stock', emoji: '⚠️' },
                 ].map(f => (
                   <button
                     key={f.id}
                     onClick={() => setBatchFilter(f.id)}
-                    className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold border transition-all duration-150 whitespace-nowrap ${
-                      batchFilter === f.id
-                        ? f.id === 'expiring_soon'
-                          ? 'bg-orange-500 border-orange-500 text-white shadow-sm'
-                          : f.id === 'expired'
-                            ? 'bg-rose-600 border-rose-600 text-white shadow-sm'
-                            : f.id === 'low_stock'
-                              ? 'bg-rose-500 border-rose-500 text-white shadow-sm'
-                              : 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
-                        : 'bg-white border-slate-200 text-slate-600 hover:border-slate-400'
-                    }`}
+                    className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-xs font-bold border transition-all duration-150 whitespace-nowrap ${batchFilter === f.id
+                      ? f.id === 'expiring_soon'
+                        ? 'bg-orange-500 border-orange-500 text-white shadow-sm'
+                        : f.id === 'expired'
+                          ? 'bg-rose-600 border-rose-600 text-white shadow-sm'
+                          : f.id === 'low_stock'
+                            ? 'bg-rose-500 border-rose-500 text-white shadow-sm'
+                            : 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
+                      : 'bg-white border-slate-200 text-slate-600 hover:border-slate-400'
+                      }`}
                   >
                     {f.emoji} {f.label}
                   </button>
@@ -1091,17 +1126,16 @@ export default function WarehouseInventory() {
                   <tbody>
                     {displayedBatches.map((row, i) => {
                       const expiring = row.expiry_date && new Date(row.expiry_date) <= new Date(Date.now() + 60 * 24 * 60 * 60 * 1000);
-                      const expired  = row.is_expired || (row.expiry_date && new Date(row.expiry_date) < new Date());
+                      const expired = row.is_expired || (row.expiry_date && new Date(row.expiry_date) < new Date());
                       return (
                         <tr
                           key={row.batch_id || i}
-                          className={`border-b border-slate-50 transition-all ${
-                            expired
-                              ? 'bg-rose-100/75 text-rose-950 font-medium border-l-4 border-rose-600'
-                              : expiring
-                                ? 'bg-rose-50/60 text-rose-900 border-l-4 border-rose-400'
-                                : 'hover:bg-slate-50/60'
-                          }`}
+                          className={`border-b border-slate-50 transition-all ${expired
+                            ? 'bg-rose-100/75 text-rose-950 font-medium border-l-4 border-rose-600'
+                            : expiring
+                              ? 'bg-rose-50/60 text-rose-900 border-l-4 border-rose-400'
+                              : 'hover:bg-slate-50/60'
+                            }`}
                         >
                           {batchColumns.map(col => (
                             <td key={col.key} className="px-4 py-3 text-slate-700 whitespace-nowrap">
@@ -1116,7 +1150,7 @@ export default function WarehouseInventory() {
               </div>
             )}
           </div>
-          <PaginationBar 
+          <PaginationBar
             pagination={{
               page: batchesPagination.page,
               total_pages: batchesPagination.total_pages,
@@ -1151,11 +1185,10 @@ export default function WarehouseInventory() {
                       return (
                         <tr
                           key={row.variant_id || i}
-                          className={`border-b border-slate-50 transition-all ${
-                            expiring
-                              ? 'bg-rose-50/60 text-rose-900 border-l-4 border-rose-400 font-medium'
-                              : 'hover:bg-slate-50/60'
-                          }`}
+                          className={`border-b border-slate-50 transition-all ${expiring
+                            ? 'bg-rose-50/60 text-rose-900 border-l-4 border-rose-400 font-medium'
+                            : 'hover:bg-slate-50/60'
+                            }`}
                         >
                           {summaryColumns.map(col => (
                             <td key={col.key} className="px-4 py-3 text-slate-700 whitespace-nowrap">
@@ -1170,12 +1203,12 @@ export default function WarehouseInventory() {
               </div>
             )}
           </div>
-          <PaginationBar 
+          <PaginationBar
             pagination={{
-              page: summaryPage,
-              total_pages: Math.ceil(processedInventory.length / summaryLimit),
-              total: processedInventory.length,
-              limit: summaryLimit
+              page: summaryPagination.page,
+              total_pages: summaryPagination.total_pages,
+              total: summaryPagination.total,
+              limit: summaryPagination.limit
             }}
             onPageChange={setSummaryPage}
             itemsPerPage={summaryLimit}
@@ -1453,7 +1486,7 @@ export default function WarehouseInventory() {
         >
           <div className="space-y-4">
             <div className="bg-indigo-50/20 border border-indigo-100 rounded-lg p-3 text-xs text-slate-700 leading-normal">
-              Manually adjusting shelf count for: <strong>{selectedItem.product_name} ({selectedItem.batch_number})</strong>.<br/>
+              Manually adjusting shelf count for: <strong>{selectedItem.product_name} ({selectedItem.batch_number})</strong>.<br />
               Current Bulk Stock is <span className="font-bold">{selectedItem.qty_available} {selectedItem.stock_unit}</span>.
             </div>
             <div className="grid grid-cols-2 gap-4">
@@ -1518,7 +1551,7 @@ export default function WarehouseInventory() {
         }}
         onDone={() => {
           dispatch(showToast({ message: 'Warehouse bulk upload queued successfully!', type: 'success' }))
-          setTimeout(() => refreshActiveTabData(), 2000)
+          setTimeout(() => invalidateSummaryCacheAndRefresh(), 2000)
         }}
       />
 
