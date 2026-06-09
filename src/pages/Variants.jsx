@@ -28,6 +28,11 @@ export default function Variants() {
   const [suggestLoading, setSuggestLoading] = useState(false)
   const suggestRef = useRef(null)
 
+  // Pagination state
+  const [page, setPage] = useState(1)
+  const [limit, setLimit] = useState(15)
+  const [pagination, setPagination] = useState(null)
+
   // Edit variant form state
   const [form, setForm] = useState({
     variant_name: '',
@@ -39,17 +44,19 @@ export default function Variants() {
     details: []
   })
 
-  const loadVariants = async () => {
+  const loadVariants = async (currentPage = page, currentLimit = limit) => {
     setLoading(true)
     try {
       const qParams = new URLSearchParams()
       if (search) qParams.set('search', search)
       if (brand) qParams.set('brand', brand)
-      qParams.set('limit', '500') // fetch enough for client side pagination
+      qParams.set('page', String(currentPage))
+      qParams.set('limit', String(currentLimit))
 
       const res = await api.get(`/products/variants?${qParams.toString()}`)
       if (res.success) {
-        setVariants(res.data?.variants || [])
+        setVariants(res.data?.variants || res.data || [])
+        setPagination(res.pagination || res.data?.pagination || null)
       }
     } catch (err) {
       console.error('Failed to load variants:', err)
@@ -59,9 +66,16 @@ export default function Variants() {
     }
   }
 
+  const handleSearchSubmit = () => {
+    setPage(1)
+    if (page === 1) {
+      loadVariants(1, limit)
+    }
+  }
+
   useEffect(() => {
-    loadVariants()
-  }, [brand])
+    loadVariants(page, limit)
+  }, [brand, page, limit])
 
   // Debounced search autocomplete
   useEffect(() => {
@@ -108,8 +122,12 @@ export default function Variants() {
       setSearch(s.name)
     }
     setShowSuggest(false)
-    // slight delay to let state commit
-    setTimeout(loadVariants, 50)
+    setPage(1)
+    if (page === 1) {
+      setTimeout(() => {
+        loadVariants(1, limit)
+      }, 50)
+    }
   }
 
   const handleEdit = (v) => {
@@ -149,11 +167,11 @@ export default function Variants() {
 
       // We call the status update/edit API on backend
       const res = await api.patch(`/products/${editingVariant.product_id || editingVariant.productId}/variants/${editingVariant.variant_id || editingVariant.variantId}/status`, payload)
-      
+
       if (res.success) {
         dispatch(showToast({ message: 'Variant updated successfully!', type: 'success' }))
         setOpen(false)
-        loadVariants()
+        loadVariants(page, limit)
       } else {
         dispatch(showToast({ message: res.message || 'Failed to update variant', type: 'error' }))
       }
@@ -262,7 +280,7 @@ export default function Variants() {
             className="w-full pl-9 pr-4 py-2 bg-gray-50 border-none rounded-lg text-sm focus:ring-0 focus:outline-none transition-all"
             value={search}
             onChange={e => { setSearch(e.target.value); setShowSuggest(true) }}
-            onKeyDown={e => e.key === 'Enter' && (loadVariants(), setShowSuggest(false))}
+            onKeyDown={e => e.key === 'Enter' && (handleSearchSubmit(), setShowSuggest(false))}
             onFocus={() => suggestions.length > 0 && setShowSuggest(true)}
           />
           <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -308,11 +326,11 @@ export default function Variants() {
             placeholder="Filter by brand..."
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-primary-500 focus:ring-0 transition-all bg-white"
             value={brand}
-            onChange={e => setBrand(e.target.value)}
+            onChange={e => { setBrand(e.target.value); setPage(1) }}
           />
         </div>
 
-        <Button variant="primary" onClick={loadVariants} loading={loading}>Search</Button>
+        <Button variant="primary" onClick={handleSearchSubmit} loading={loading}>Search</Button>
       </div>
 
       <Grid
@@ -320,7 +338,12 @@ export default function Variants() {
         data={variants}
         loading={loading}
         showSearch={false}
-        pageSize={15}
+        currentPage={page}
+        pageSize={limit}
+        totalPages={pagination?.totalPages || pagination?.total_pages || 1}
+        totalItems={pagination?.total || pagination?.totalItems || 0}
+        onPageChange={setPage}
+        onLimitChange={setLimit}
         emptyText="No variants found matching criteria."
       />
 

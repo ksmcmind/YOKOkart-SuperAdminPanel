@@ -66,6 +66,7 @@ const EMPTY_FILTERS = {
   isVeg: '',
   search: '',
   page: 1,
+  limit: 10,
 }
 
 const STATUS_OPTIONS = [
@@ -320,6 +321,15 @@ export default function Products() {
     setCommittedFilters(EMPTY_FILTERS)
   }
 
+  const handlePageChange = (newPage) => {
+    setCommittedFilters(prev => ({ ...prev, page: newPage }))
+  }
+
+  const handleLimitChange = (newLimit) => {
+    setCommittedFilters(prev => ({ ...prev, page: 1, limit: newLimit }))
+    setDraftFilters(prev => ({ ...prev, limit: newLimit }))
+  }
+
   const removeChip = (key) => {
     const next = { ...committedFilters, [key]: '', page: 1 }
     setCommittedFilters(next)
@@ -494,6 +504,12 @@ export default function Products() {
         loading={loading}
         showSearch={false}
         renderExpanded={renderExpanded}
+        currentPage={committedFilters.page || 1}
+        pageSize={committedFilters.limit || 10}
+        totalPages={pagination?.totalPages || 1}
+        totalItems={pagination?.total || 0}
+        onPageChange={handlePageChange}
+        onLimitChange={handleLimitChange}
       />
 
 
@@ -582,7 +598,7 @@ export default function Products() {
           return action.payload;
         }}
         groupRows={groupRowsToProducts}
-        onDone={() => dispatch(fetchProducts({ categorySlug, subcategorySlug, search }))}
+        onDone={() => dispatch(fetchProducts(committedFilters))}
       />
     </div>
   )
