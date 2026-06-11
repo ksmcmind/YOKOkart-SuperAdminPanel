@@ -1,7 +1,7 @@
 // src/pages/Login.jsx
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
-import { sendOtp, verifyOtp, selectOtpSent, selectAuthLoading, selectAuthError, clearError } from '../store/slices/authSlice'
+import { sendOtp, verifyOtp, selectOtpSent, selectAuthLoading, selectAuthError, clearError, resetOtpSent } from '../store/slices/authSlice'
 import Button from '../components/Button'
 import Input  from '../components/Input'
 
@@ -13,11 +13,33 @@ export default function Login() {
 
   const [phone, setPhone] = useState('')
   const [otp,   setOtp]   = useState('')
+  const [timer, setTimer] = useState(0)
+
+  useEffect(() => {
+    if (otpSent) {
+      setTimer(30)
+    } else {
+      setTimer(0)
+    }
+  }, [otpSent])
+
+  useEffect(() => {
+    let interval = null
+    if (otpSent && timer > 0) {
+      interval = setInterval(() => {
+        setTimer(prev => prev - 1)
+      }, 1000)
+    }
+    return () => {
+      if (interval) clearInterval(interval)
+    }
+  }, [otpSent, timer])
 
   const handleSendOtp = () => {
     if (phone.length !== 10) return
     dispatch(clearError())
     dispatch(sendOtp(phone))
+    setTimer(30)
   }
 
   const handleVerify = () => {
@@ -97,10 +119,32 @@ export default function Login() {
               >
                 Login
               </Button>
+
+              <div className="text-center mb-4">
+                {timer > 0 ? (
+                  <p className="text-xs text-gray-500">
+                    Resend OTP in <span className="font-semibold text-primary-600">{timer}s</span>
+                  </p>
+                ) : (
+                  <button
+                    type="button"
+                    className="text-xs text-primary-600 font-semibold hover:text-primary-700 transition"
+                    onClick={handleSendOtp}
+                    disabled={loading}
+                  >
+                    Resend OTP
+                  </button>
+                )}
+              </div>
+
               <Button
                 variant="secondary"
                 className="w-full text-xs"
-                onClick={() => { setOtp(''); dispatch(clearError()) }}
+                onClick={() => {
+                  setOtp('');
+                  dispatch(resetOtpSent());
+                  dispatch(clearError());
+                }}
               >
                 ← Change number
               </Button>

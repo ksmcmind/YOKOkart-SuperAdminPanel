@@ -4,16 +4,21 @@ import api from '../../api/index'
 
 export const fetchStaff = createAsyncThunk(
   'staff/fetchAll',
-  async (martId, { rejectWithValue }) => {
-    const url = martId ? `/staff?martId=${martId}` : '/staff'
+  async (arg, { rejectWithValue }) => {
+    let url = '/staff'
+    if (arg && typeof arg === 'string') {
+      url = `/staff?martId=${arg}`
+    } else if (arg && typeof arg === 'object' && arg.martId) {
+      url = `/staff?martId=${arg.martId}`
+    }
     const res = await api.get(url)
     if (!res.success) return rejectWithValue(res.message)
     return res.data
   },
   {
-    condition: (martId, { getState }) => {
-      // If we are filtering by a specific mart, we should fetch. Otherwise, check cache.
-      if (martId) return true
+    condition: (arg, { getState }) => {
+      if (arg === true || (arg && arg.force === true)) return true
+      if (typeof arg === 'string' || (arg && arg.martId)) return true
       const { staff } = getState()
       if (staff.list.length > 0 && !staff.loading) return false
     }

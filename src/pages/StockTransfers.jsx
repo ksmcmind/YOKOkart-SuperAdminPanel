@@ -3,6 +3,15 @@ import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import api from '../api/index'
 import { showToast } from '../store/slices/uiSlice'
+import {
+  fetchWarehouses,
+  selectAllWarehouses,
+  setSelectedWarehouseId as setSelectedWarehouseIdAction
+} from '../store/slices/warehouseSlice'
+import {
+  fetchMarts,
+  selectAllMarts
+} from '../store/slices/martSlice'
 import PageHeader from '../components/PageHeader'
 import Button from '../components/Button'
 import Grid from '../components/Grid'
@@ -10,6 +19,7 @@ import Modal from '../components/Modal'
 import Badge from '../components/Badge'
 import Input, { Select, Textarea } from '../components/Input'
 import StatCard from '../components/StatCard'
+import AlgoliaProductSearch from '../components/AlgoliaProductSearch'
 
 export default function StockTransfers() {
   const dispatch = useDispatch()
@@ -17,9 +27,11 @@ export default function StockTransfers() {
   const isSuperAdmin = user?.role === 'super_admin'
 
   // Base list state
-  const [warehouses, setWarehouses] = useState([])
-  const [marts, setMarts] = useState([])
-  const [selectedWarehouseId, setSelectedWarehouseId] = useState('')
+  // Redux Selectors
+  const warehouses = useSelector(selectAllWarehouses)
+  const marts = useSelector(selectAllMarts)
+  const selectedWarehouseId = useSelector(state => state.warehouse.selectedWarehouseId)
+  const setSelectedWarehouseId = (val) => dispatch(setSelectedWarehouseIdAction(val))
   const [transfers, setTransfers] = useState([])
   const [warehouseInventory, setWarehouseInventory] = useState([])
   const [loading, setLoading] = useState(false)
@@ -43,27 +55,9 @@ export default function StockTransfers() {
     notes: ''
   })
 
-  const [productSearchText, setProductSearchText] = useState('')
-  const [productDropdownOpen, setProductDropdownOpen] = useState(false)
-  const [selectedProduct, setSelectedProduct] = useState(null)
-
-  // Unique products in warehouse inventory (for product search input)
-  const uniqueInventoryProducts = useMemo(() => {
-    const map = new Map();
-    warehouseInventory.forEach(item => {
-      const prodId = item.product_id;
-      if (!map.has(prodId)) {
-        map.set(prodId, {
-          productId: prodId,
-          productName: item.product_name || item.productName || 'Generic Product',
-          brand: item.brand_name || item.brand || 'Generic',
-          variants: []
-        });
-      }
-      map.get(prodId).variants.push(item);
-    });
-    return Array.from(map.values());
-  }, [warehouseInventory]);
+  // Algolia product/variant selection state (replaces uniqueInventoryProducts local search)
+  const [selectedProductLabel, setSelectedProductLabel] = useState('')
+  const [selectedProductVariants, setSelectedProductVariants] = useState([])
 
   const [receiveForm, setReceiveForm] = useState({
     qtyReceived: ''
@@ -82,26 +76,24 @@ export default function StockTransfers() {
   }
 
   // Load static catalog lists
-  const loadWarehousesAndMarts = async () => {
-    try {
-      const wRes = await api.get('/warehouses')
-      if (wRes.success) {
-        const list = wRes.data || []
-        setWarehouses(list)
-        if (list.length > 0) {
-          const activeOnes = list.filter(w => w.is_active)
-          const def = activeOnes.length > 0 ? activeOnes[0] : list[0]
-          setSelectedWarehouseId(def.warehouse_id)
-        }
-      }
-      const mRes = await api.get('/marts')
-      if (mRes.success) {
-        setMarts(mRes.data || [])
-      }
-    } catch (err) {
-      console.error(err)
-      dispatch(showToast({ message: 'Failed to load initial directory data', type: 'error' }))
+  const loadWarehousesAndMarts = () => {
+    dispatch(fetchWarehouses())
+    dispatch(fetchMarts())
+  }
+
+  useEffect(() => {
+    if (warehouses.length > 0 && !selectedWarehouseId) {
+      const activeOnes = warehouses.filter(w => w.is_active)
+      const def = activeOnes.length > 0 ? activeOnes[0] : warehouses[0]
+      setSelectedWarehouseId(def.warehouse_id)
     }
+  }, [warehouses, selectedWarehouseId])
+
+  const handleRefreshData = () => {
+    dispatch(fetchWarehouses(true))
+    dispatch(fetchMarts(true))
+    fetchTransfers()
+    fetchWarehouseInventory()
   }
 
   // Load transfers for selected warehouse
@@ -190,8 +182,8 @@ export default function StockTransfers() {
         dispatch(showToast({ message: 'Replenishment transfer created and stock reserved!', type: 'success' }))
         setCreateOpen(false)
         setCreateForm({ martId: '', productId: '', variantId: '', qtyDispatched: '', notes: '' })
-        setProductSearchText('')
-        setSelectedProduct(null)
+        setSelectedProductLabel('')
+        setSelectedProductVariants([])
         fetchTransfers()
         fetchWarehouseInventory()
       } else {
@@ -374,16 +366,21 @@ export default function StockTransfers() {
         title="Stock Transfers & Replenishments"
         subtitle="Manage outbound warehouse dispatches, allocate cargo items, and confirm inbound mart receipt receipts."
       >
-        {!isSuperAdmin && (
-          <Button variant="primary" onClick={() => {
-            setCreateForm({ martId: '', productId: '', variantId: '', qtyDispatched: '', notes: '' });
-            setProductSearchText('');
-            setSelectedProduct(null);
-            setCreateOpen(true);
-          }}>
-            ➕ Create Stock Transfer
+        <div className="flex gap-2">
+          <Button variant="secondary" onClick={handleRefreshData} className="flex items-center gap-1.5">
+            🔄 Refresh
           </Button>
-        )}
+          {!isSuperAdmin && (
+            <Button variant="primary" onClick={() => {
+              setCreateForm({ martId: '', productId: '', variantId: '', qtyDispatched: '', notes: '' });
+              setSelectedProductLabel('');
+              setSelectedProductVariants([]);
+              setCreateOpen(true);
+            }}>
+              ➕ Create Stock Transfer
+            </Button>
+          )}
+        </div>
       </PageHeader>
 
       {/* Stats Summary cards */}
@@ -484,62 +481,28 @@ export default function StockTransfers() {
             ))}
           </Select>
 
-          <div className="relative">
-            <label className="block text-xs font-bold text-slate-700 mb-1">Select Product *</label>
-            <input
-              type="text"
-              required
-              placeholder="🔍 Search product by name or brand..."
-              value={productSearchText}
-              onChange={(e) => {
-                setProductSearchText(e.target.value);
-                setProductDropdownOpen(true);
-              }}
-              onFocus={() => setProductDropdownOpen(true)}
-              onBlur={() => setTimeout(() => setProductDropdownOpen(false), 200)}
-              className="w-full text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-xl px-3 py-2.5 focus:border-indigo-500 focus:outline-none transition-colors"
-            />
-            {productDropdownOpen && (
-              <div className="absolute left-0 right-0 z-50 bg-white border border-slate-200 rounded-xl shadow-xl max-h-60 overflow-y-auto mt-1 p-1">
-                {uniqueInventoryProducts
-                  .filter(item => {
-                    const q = productSearchText.toLowerCase().trim();
-                    if (!q) return true;
-                    const prodName = item.productName.toLowerCase();
-                    const brandName = item.brand.toLowerCase();
-                    return prodName.includes(q) || brandName.includes(q);
-                  })
-                  .map(item => {
-                    const isSelected = selectedProduct?.productId === item.productId;
-                    return (
-                      <button
-                        key={item.productId}
-                        type="button"
-                        onMouseDown={(e) => {
-                          e.preventDefault();
-                          setSelectedProduct(item);
-                          setCreateForm(prev => ({
-                            ...prev,
-                            productId: item.productId,
-                            variantId: ''
-                          }));
-                          setProductSearchText(`${item.productName} (${item.brand})`);
-                          setProductDropdownOpen(false);
-                        }}
-                        className={`w-full text-left text-xs font-semibold px-3 py-2 rounded-lg hover:bg-slate-50 transition-colors duration-150 border-b border-slate-100 flex flex-col gap-0.5 text-slate-700 ${isSelected ? 'bg-indigo-50 text-indigo-900' : ''}`}
-                      >
-                        <span className="font-bold">{item.productName} ({item.brand})</span>
-                        <span className="text-[10px] text-slate-500 font-mono">
-                          {item.variants.length} in-stock variant(s)
-                        </span>
-                      </button>
-                    );
-                  })}
-              </div>
-            )}
-          </div>
+          <AlgoliaProductSearch
+            mode="product"
+            label="Select Product *"
+            value={selectedProductLabel}
+            placeholder="Search Algolia catalog by name or brand…"
+            onSelect={(prod) => {
+              setSelectedProductLabel(`${prod.productName} (${prod.brandName})`)
+              setSelectedProductVariants(prod.variants || [])
+              setCreateForm(prev => ({
+                ...prev,
+                productId: prod.productId,
+                variantId: ''
+              }))
+            }}
+            onClear={() => {
+              setSelectedProductLabel('')
+              setSelectedProductVariants([])
+              setCreateForm(prev => ({ ...prev, productId: '', variantId: '' }))
+            }}
+          />
 
-          {selectedProduct && (
+          {selectedProductVariants.length > 0 && (
             <div className="flex flex-col gap-1 mt-1">
               <label className="text-xs font-bold text-slate-700 mb-1">Select Variant *</label>
               <select
@@ -549,15 +512,15 @@ export default function StockTransfers() {
                 className="w-full text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-xl px-3 py-2.5 focus:border-indigo-500 focus:outline-none transition-colors"
               >
                 <option value="">-- Choose Variant --</option>
-                {selectedProduct.variants.map(v => {
-                  const avail = v.available_qty !== undefined ? parseFloat(v.available_qty) : (parseFloat(v.bulk_stock_qty || 0) - parseFloat(v.reserved_qty || 0));
-                  const rack = v.asl || v.ASL || 'N/A';
-                  const sku = v.variant_sku || v.sku || 'N/A';
+                {selectedProductVariants.map((v, i) => {
+                  const variantId = v.variant_id || v.variantId || v.sku
+                  const variantName = v.variant_name || v.variantName || v.sku || 'Default'
+                  const sku = v.sku || 'N/A'
                   return (
-                    <option key={v.variant_id || v.id} value={v.variant_id || v.id} disabled={avail <= 0}>
-                      {v.variant_name || v.variantName || v.sku || 'Default'} (SKU: {sku}) -- Available: {avail} units (ASL: {rack})
+                    <option key={variantId || i} value={variantId}>
+                      {variantName} · SKU: {sku}
                     </option>
-                  );
+                  )
                 })}
               </select>
             </div>

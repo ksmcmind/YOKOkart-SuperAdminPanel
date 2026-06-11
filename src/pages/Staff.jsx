@@ -91,6 +91,12 @@ export default function Staff() {
     }
   }, [error, dispatch])
 
+  const handleRefreshData = () => {
+    dispatch(fetchStaff(true))
+    dispatch(fetchMarts(true))
+    dispatch(fetchWarehouses(true))
+  }
+
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
   const handleEdit = (s) => {
@@ -245,7 +251,16 @@ export default function Staff() {
       <PageHeader
         title="Staff"
         subtitle="Manage organization workforce"
-        action={<Button variant="primary" onClick={() => { setForm(EMPTY); setEditingStaff(null); setOpen(true) }}>+ Add Staff Member</Button>}
+        action={
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={handleRefreshData}>
+              🔄 Refresh
+            </Button>
+            <Button variant="primary" onClick={() => { setForm(EMPTY); setEditingStaff(null); setOpen(true) }}>
+              + Add Staff Member
+            </Button>
+          </div>
+        }
       />
 
       <Grid

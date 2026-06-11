@@ -31,20 +31,24 @@ export default function BulkJobNotifications() {
         });
 
         socket.on('bulk_progress', (data) => {
+            const incomingId = data?.jobId || data?.job_id;
+            if (!incomingId) return;
             setJobs(prev => {
-                const existing = prev.find(j => j.jobId === data.jobId);
+                const existing = prev.find(j => (j.jobId || j.job_id) === incomingId);
                 if (existing) {
-                    return prev.map(j => j.jobId === data.jobId ? { ...j, ...data } : j);
+                    return prev.map(j => (j.jobId || j.job_id) === incomingId ? { ...j, ...data } : j);
                 }
                 return [data, ...prev];
             });
         });
 
         socket.on('bulk_complete', (data) => {
+            const incomingId = data?.jobId || data?.job_id;
+            if (!incomingId) return;
             setJobs(prev => {
-                const existing = prev.find(j => j.jobId === data.jobId);
+                const existing = prev.find(j => (j.jobId || j.job_id) === incomingId);
                 if (existing) {
-                    return prev.map(j => j.jobId === data.jobId ? { ...j, ...data } : j);
+                    return prev.map(j => (j.jobId || j.job_id) === incomingId ? { ...j, ...data } : j);
                 }
                 return [data, ...prev];
             });
@@ -177,7 +181,7 @@ export default function BulkJobNotifications() {
                                                         {job.errors.map((e, idx) => (
                                                             <div key={idx} className="bg-red-50 text-red-800 p-2 rounded border border-red-100">
                                                                 <span className="font-bold block mb-1">Row {e.rowNumber || e.row} {e.identifier ? `- ${e.identifier}` : ''}</span>
-                                                                <span className="opacity-90">{e.message}</span>
+                                                                <span className="opacity-90">{e.message || e.reason || 'Unknown error'}</span>
                                                             </div>
                                                         ))}
                                                     </div>

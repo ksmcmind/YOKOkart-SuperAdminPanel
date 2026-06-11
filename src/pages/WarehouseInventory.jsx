@@ -1,7 +1,31 @@
-// src/pages/WarehouseInventory.jsx
-import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
-import { useDispatch } from 'react-redux'
-import api from '../api/index'
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
+import { useDispatch, useSelector } from 'react-redux'
+import { 
+  fetchWarehouses, 
+  fetchWarehouseInventorySummary, 
+  fetchWarehouseInventoryRows, 
+  fetchWarehouseBatches, 
+  addWarehouseStock, 
+  adjustWarehouseStock,
+  bulkUploadWarehouseInventory,
+  fetchSuppliers,
+  createSupplier,
+  updateSupplier,
+  toggleSupplierStatus,
+  fetchPOs,
+  createPO,
+  updatePOStatus,
+  receiveGoods,
+  fetchPODetails,
+  setSelectedWarehouseId as setSelectedWarehouseIdAction,
+  setSummaryPage as setSummaryPageAction,
+  setSummaryLimit as setSummaryLimitAction,
+  setBatchesPage as setBatchesPageAction,
+  setBatchesLimit as setBatchesLimitAction,
+  setActiveTab as setActiveTabAction,
+  selectAllWarehouses
+} from '../store/slices/warehouseSlice'
+import { fetchProducts } from '../store/slices/productSlice'
 import { showToast } from '../store/slices/uiSlice'
 import PageHeader from '../components/PageHeader'
 import Button from '../components/Button'
@@ -12,6 +36,7 @@ import Input, { Select, Textarea } from '../components/Input'
 import BulkUploadModal from '../components/BulkUploadModal'
 import StatCard from '../components/StatCard'
 import AutocompleteVariantSelect from '../components/AutocompleteVariantSelect'
+import AlgoliaProductSearch from '../components/AlgoliaProductSearch'
 
 const SCHEMA_FIELDS = [
   'product_code',
@@ -177,10 +202,24 @@ export default function WarehouseInventory() {
   const dispatch = useDispatch()
   const summaryCacheRef = useRef({})
 
+  // Redux Selectors
+  const warehouses = useSelector(selectAllWarehouses)
+  const selectedWarehouseId = useSelector(state => state.warehouse.selectedWarehouseId)
+  const activeTab = useSelector(state => state.warehouse.activeTab)
+  const summaryPage = useSelector(state => state.warehouse.summaryPage)
+  const summaryLimit = useSelector(state => state.warehouse.summaryLimit)
+  const batchesPage = useSelector(state => state.warehouse.batchesPage)
+  const batchesLimit = useSelector(state => state.warehouse.batchesLimit)
+
+  // Redux Action Dispatchers
+  const setSelectedWarehouseId = (val) => dispatch(setSelectedWarehouseIdAction(val))
+  const setActiveTab = (val) => dispatch(setActiveTabAction(val))
+  const setSummaryPage = (val) => dispatch(setSummaryPageAction(val))
+  const setSummaryLimit = (val) => dispatch(setSummaryLimitAction(val))
+  const setBatchesPage = (val) => dispatch(setBatchesPageAction(val))
+  const setBatchesLimit = (val) => dispatch(setBatchesLimitAction(val))
+
   // Base State
-  const [warehouses, setWarehouses] = useState([])
-  const [selectedWarehouseId, setSelectedWarehouseId] = useState('')
-  const [activeTab, setActiveTab] = useState('summary') // 'summary' | 'batches'
   const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
 
@@ -202,8 +241,6 @@ export default function WarehouseInventory() {
   // Tab 2: Batches List State
   const [batches, setBatches] = useState([])
   const [batchesPagination, setBatchesPagination] = useState({ page: 1, limit: 25, total: 0, total_pages: 0 })
-  const [batchesPage, setBatchesPage] = useState(1)
-  const [batchesLimit, setBatchesLimit] = useState(25)
 
   // Modals & Submissions
   const [bulkOpen, setBulkOpen] = useState(false)
@@ -220,8 +257,6 @@ export default function WarehouseInventory() {
 
   // Filters (Tab 1 Summary Specific)
   const [summaryFilter, setSummaryFilter] = useState('all') // 'all' | 'expiring_soon' | 'low_stock'
-  const [summaryPage, setSummaryPage] = useState(1)
-  const [summaryLimit, setSummaryLimit] = useState(25)
   const [summaryPagination, setSummaryPagination] = useState({ page: 1, limit: 25, total: 0, total_pages: 0 })
 
   // Filters (Tab 2 Batches Specific)
@@ -241,30 +276,32 @@ export default function WarehouseInventory() {
 
   // ── Loaders ───────────────────────────────────────────────────────────────
 
-  const loadWarehouses = async () => {
-    try {
-      const res = await api.get('/warehouses')
-      if (res.success) {
-        const list = res.data || []
-        setWarehouses(list)
-        if (list.length > 0) {
-          const activeOnes = list.filter(w => w.is_active)
-          const def = activeOnes.length > 0 ? activeOnes[0] : list[0]
-          setSelectedWarehouseId(def.warehouse_id)
-        }
-      }
-    } catch (err) {
-      console.error(err)
-      dispatch(showToast({ message: 'Failed to load warehouses', type: 'error' }))
+  const loadWarehouses = () => {
+    dispatch(fetchWarehouses())
+  }
+
+  useEffect(() => {
+    if (warehouses.length > 0 && !selectedWarehouseId) {
+      const activeOnes = warehouses.filter(w => w.is_active)
+      const def = activeOnes.length > 0 ? activeOnes[0] : warehouses[0]
+      setSelectedWarehouseId(def.warehouse_id)
+    }
+  }, [warehouses, selectedWarehouseId])
+
+  const handleRefreshData = () => {
+    dispatch(fetchWarehouses(true))
+    fetchSummaryStats()
+    if (activeTab === 'summary') {
+      fetchInventory(true)
+    } else if (activeTab === 'batches') {
+      fetchBatches()
     }
   }
 
   const loadCatalog = async () => {
     try {
-      const res = await api.get('/products?limit=250')
-      if (res.success) {
-        setCatalogProducts(Array.isArray(res.data) ? res.data : (res.data?.products || []))
-      }
+      const res = await dispatch(fetchProducts({ limit: 250 })).unwrap()
+      setCatalogProducts(Array.isArray(res) ? res : (res?.products || []))
     } catch (err) {
       console.error(err)
     }
@@ -275,10 +312,8 @@ export default function WarehouseInventory() {
   const fetchSummaryStats = async () => {
     if (!selectedWarehouseId) return
     try {
-      const res = await api.get(`/warehouse-inventory/warehouse/${selectedWarehouseId}/summary`)
-      if (res.success) {
-        setSummaryStats(res.data)
-      }
+      const res = await dispatch(fetchWarehouseInventorySummary(selectedWarehouseId)).unwrap()
+      setSummaryStats(res)
     } catch (err) {
       console.error(err)
     }
@@ -299,20 +334,24 @@ export default function WarehouseInventory() {
 
     setLoading(true)
     try {
-      const q = `?page=${summaryPage}&limit=${summaryLimit}&filter=${summaryFilter}` + (search ? `&search=${encodeURIComponent(search)}` : '')
-      const res = await api.get(`/warehouse-inventory/warehouse/${selectedWarehouseId}${q}`)
-      if (res.success) {
-        const data = res.data || []
-        const pagination = res.pagination || { page: 1, limit: 25, total: 0, total_pages: 0 }
+      const res = await dispatch(fetchWarehouseInventoryRows({
+        warehouseId: selectedWarehouseId,
+        page: summaryPage,
+        limit: summaryLimit,
+        filter: summaryFilter,
+        search
+      })).unwrap()
 
-        setInventory(data)
-        setSummaryPagination(pagination)
+      const data = res.data || []
+      const pagination = res.pagination || { page: 1, limit: 25, total: 0, total_pages: 0 }
 
-        summaryCacheRef.current[cacheKey] = {
-          data,
-          pagination,
-          timestamp: now
-        }
+      setInventory(data)
+      setSummaryPagination(pagination)
+
+      summaryCacheRef.current[cacheKey] = {
+        data,
+        pagination,
+        timestamp: now
       }
     } catch (err) {
       console.error(err)
@@ -326,14 +365,17 @@ export default function WarehouseInventory() {
     if (!selectedWarehouseId) return
     setLoading(true)
     try {
-      const expiringSoon = batchFilter === 'expiring_soon' ? '&expiring_soon=true' : ''
-      const expiredOnly = batchFilter === 'expired' ? '&expired_only=true' : ''
-      const q = `?page=${batchesPage}&limit=${batchesLimit}${expiringSoon}${expiredOnly}` + (search ? `&search=${encodeURIComponent(search)}` : '')
-      const res = await api.get(`/warehouse-inventory/warehouse/${selectedWarehouseId}/batches${q}`)
-      if (res.success) {
-        setBatches(res.data || [])
-        setBatchesPagination(res.pagination || { page: 1, limit: 25, total: 0, total_pages: 0 })
-      }
+      const res = await dispatch(fetchWarehouseBatches({
+        warehouseId: selectedWarehouseId,
+        page: batchesPage,
+        limit: batchesLimit,
+        expiring_soon: batchFilter === 'expiring_soon',
+        expired_only: batchFilter === 'expired',
+        search
+      })).unwrap()
+
+      setBatches(res.data || [])
+      setBatchesPagination(res.pagination || { page: 1, limit: 25, total: 0, total_pages: 0 })
     } catch (err) {
       console.error(err)
       dispatch(showToast({ message: 'Failed to fetch batches', type: 'error' }))
@@ -531,17 +573,13 @@ export default function WarehouseInventory() {
         }
       };
 
-      const res = await api.post('/warehouse-inventory/add-stock', payload);
-      if (res.success) {
-        dispatch(showToast({ message: `Received ${computedQty} ${restockForm.stockUnit} stock successfully!`, type: 'success' }));
-        setRestockOpen(false);
-        setRestockForm(EMPTY_RESTOCK_FORM);
-        invalidateSummaryCacheAndRefresh();
-      } else {
-        dispatch(showToast({ message: res.message || 'Restock failed', type: 'error' }));
-      }
+      const res = await dispatch(addWarehouseStock(payload)).unwrap();
+      dispatch(showToast({ message: `Received ${computedQty} ${restockForm.stockUnit} stock successfully!`, type: 'success' }));
+      setRestockOpen(false);
+      setRestockForm(EMPTY_RESTOCK_FORM);
+      invalidateSummaryCacheAndRefresh();
     } catch (err) {
-      dispatch(showToast({ message: 'Error processing restock cargo', type: 'error' }));
+      dispatch(showToast({ message: err || 'Error processing restock cargo', type: 'error' }));
     } finally {
       setSubmitting(false);
     }
@@ -564,22 +602,18 @@ export default function WarehouseInventory() {
 
     setSubmitting(true);
     try {
-      const res = await api.post('/warehouse-inventory/adjust-stock', {
+      const res = await dispatch(adjustWarehouseStock({
         batchId: selectedItem.batch_id,
         qtyChange: parseFloat(adjustForm.qtyChange),
         mode: adjustForm.mode,
         reason: adjustForm.reason
-      });
-      if (res.success) {
-        dispatch(showToast({ message: 'Batch stock adjusted successfully!', type: 'success' }));
-        setAdjustOpen(false);
-        setAdjustForm({ qtyChange: '', mode: 'add', reason: '' });
-        invalidateSummaryCacheAndRefresh();
-      } else {
-        dispatch(showToast({ message: res.message || 'Adjustment failed', type: 'error' }));
-      }
+      })).unwrap();
+      dispatch(showToast({ message: 'Batch stock adjusted successfully!', type: 'success' }));
+      setAdjustOpen(false);
+      setAdjustForm({ qtyChange: '', mode: 'add', reason: '' });
+      invalidateSummaryCacheAndRefresh();
     } catch (err) {
-      dispatch(showToast({ message: 'Error updating batch stock levels', type: 'error' }));
+      dispatch(showToast({ message: err || 'Error updating batch stock levels', type: 'error' }));
     } finally {
       setSubmitting(false);
     }
@@ -1011,19 +1045,24 @@ export default function WarehouseInventory() {
       )}
 
       {/* Tab Selector Links */}
-      <div className="border-b border-gray-100 flex gap-4">
-        <button
-          onClick={() => setActiveTab('summary')}
-          className={`py-3 px-1 font-bold text-sm border-b-2 transition-all flex items-center gap-2 ${activeTab === 'summary' ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}
-        >
-          📋 Shelf Summary (VIEW)
-        </button>
-        <button
-          onClick={() => setActiveTab('batches')}
-          className={`py-3 px-1 font-bold text-sm border-b-2 transition-all flex items-center gap-2 ${activeTab === 'batches' ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}
-        >
-          📦 Individual Batches
-        </button>
+      <div className="border-b border-gray-100 flex justify-between items-center">
+        <div className="flex gap-4">
+          <button
+            onClick={() => setActiveTab('summary')}
+            className={`py-3 px-1 font-bold text-sm border-b-2 transition-all flex items-center gap-2 ${activeTab === 'summary' ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}
+          >
+            📋 Shelf Summary (VIEW)
+          </button>
+          <button
+            onClick={() => setActiveTab('batches')}
+            className={`py-3 px-1 font-bold text-sm border-b-2 transition-all flex items-center gap-2 ${activeTab === 'batches' ? 'border-primary-600 text-primary-600' : 'border-transparent text-gray-400 hover:text-gray-600'}`}
+          >
+            📦 Individual Batches
+          </button>
+        </div>
+        <Button variant="secondary" size="sm" onClick={handleRefreshData} className="flex items-center gap-1.5 py-1.5 px-3">
+          🔄 Refresh
+        </Button>
       </div>
 
       {/* Zepto-style Filter Pill Bar */}
@@ -1125,17 +1164,21 @@ export default function WarehouseInventory() {
                   </thead>
                   <tbody>
                     {displayedBatches.map((row, i) => {
-                      const expiring = row.expiry_date && new Date(row.expiry_date) <= new Date(Date.now() + 60 * 24 * 60 * 60 * 1000);
                       const expired = row.is_expired || (row.expiry_date && new Date(row.expiry_date) < new Date());
+                      const expiring = !expired && row.expiry_date && new Date(row.expiry_date) <= new Date(Date.now() + 60 * 24 * 60 * 60 * 1000);
+                      const isLow = !expired && !expiring && parseFloat(row.qty_available || 0) <= parseFloat(row.reorder_level || 10);
                       return (
                         <tr
                           key={row.batch_id || i}
-                          className={`border-b border-slate-50 transition-all ${expired
-                            ? 'bg-rose-100/75 text-rose-950 font-medium border-l-4 border-rose-600'
-                            : expiring
-                              ? 'bg-rose-50/60 text-rose-900 border-l-4 border-rose-400'
-                              : 'hover:bg-slate-50/60'
-                            }`}
+                          className={`border-b border-slate-50 transition-all ${
+                            expired
+                              ? 'bg-red-900 text-white font-semibold border-l-4 border-red-600'
+                              : expiring
+                                ? 'bg-orange-50 text-orange-950 border-l-4 border-orange-500 font-medium'
+                                : isLow
+                                  ? 'bg-red-50 text-red-900 border-l-4 border-red-500 font-semibold'
+                                  : 'hover:bg-slate-50/60'
+                          }`}
                         >
                           {batchColumns.map(col => (
                             <td key={col.key} className="px-4 py-3 text-slate-700 whitespace-nowrap">
@@ -1181,14 +1224,21 @@ export default function WarehouseInventory() {
                   </thead>
                   <tbody>
                     {paginatedSummaryData.map((row, i) => {
-                      const expiring = isExpiringSoon(row.nearest_expiry);
+                      const expired = row.nearest_expiry && new Date(row.nearest_expiry) < new Date();
+                      const expiring = !expired && isExpiringSoon(row.nearest_expiry);
+                      const isLow = parseFloat(row.available_qty) <= parseFloat(row.reorder_level);
                       return (
                         <tr
                           key={row.variant_id || i}
-                          className={`border-b border-slate-50 transition-all ${expiring
-                            ? 'bg-rose-50/60 text-rose-900 border-l-4 border-rose-400 font-medium'
-                            : 'hover:bg-slate-50/60'
-                            }`}
+                          className={`border-b border-slate-50 transition-all ${
+                            expired
+                              ? 'bg-red-900 text-white font-semibold border-l-4 border-red-600'
+                              : expiring
+                                ? 'bg-orange-50 text-orange-950 border-l-4 border-orange-500 font-medium'
+                                : isLow
+                                  ? 'bg-red-50 text-red-900 border-l-4 border-red-500 font-semibold'
+                                  : 'hover:bg-slate-50/60'
+                          }`}
                         >
                           {summaryColumns.map(col => (
                             <td key={col.key} className="px-4 py-3 text-slate-700 whitespace-nowrap">
@@ -1336,20 +1386,22 @@ export default function WarehouseInventory() {
             <h4 className="text-[10px] font-black text-indigo-600 uppercase tracking-widest flex items-center gap-2">
               <span className="w-1.5 h-3 bg-indigo-600 rounded-full" />Catalog Product Reference
             </h4>
-            <div className="form-group">
-              <label className="label block mb-1">Search Catalog Variant *</label>
-              <AutocompleteVariantSelect
-                value={restockForm.variantId}
-                displayLabel={restockForm.variantLabel}
-                onChange={(variantId, displayLabel, v) => {
+          <div className="form-group">
+              <AlgoliaProductSearch
+                mode="variant"
+                label="Search Catalog Variant *"
+                value={restockForm.variantLabel}
+                placeholder="Search by brand, product name, or SKU…"
+                onSelect={(v) => {
                   setRestockForm(prev => ({
                     ...prev,
                     productId: v.productId,
-                    variantId: variantId,
+                    variantId: v.variantId,
                     stockUnit: v.stockUnit || 'pcs',
-                    variantLabel: displayLabel
+                    variantLabel: v.displayLabel
                   }));
                 }}
+                onClear={() => setRestockForm(prev => ({ ...prev, productId: '', variantId: '', variantLabel: '' }))}
               />
             </div>
           </div>
@@ -1535,18 +1587,17 @@ export default function WarehouseInventory() {
         onUpload={async (_, file) => {
           const formData = new FormData()
           formData.append('file', file)
-          const res = await api.post(`/warehouse-inventory/bulk?warehouseId=${selectedWarehouseId}`, formData)
-
-          if (res.success === false) {
+          try {
+            const res = await dispatch(bulkUploadWarehouseInventory({ warehouseId: selectedWarehouseId, formData })).unwrap()
             return {
-              errors: res.data?.errors?.map(e => `Row ${e.row || '?'}: ${e.field ? e.field + ' ' : ''}${e.message || e.reason || 'Unknown error'}`) || ['CSV failed validation rules.']
+              jobId: res?.jobId,
+              totalRows: res?.totalRows,
+              created: res?.totalRows,
             }
-          }
-
-          return {
-            jobId: res.data?.jobId,
-            totalRows: res.data?.totalRows,
-            created: res.data?.totalRows,
+          } catch (err) {
+            return {
+              errors: err?.data?.errors?.map(e => `Row ${e.row || '?'}: ${e.field ? e.field + ' ' : ''}${e.message || e.reason || 'Unknown error'}`) || [err?.message || 'CSV failed validation rules.']
+            }
           }
         }}
         onDone={() => {

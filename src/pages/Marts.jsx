@@ -70,6 +70,12 @@ export default function Marts() {
     dispatch(fetchStaff())
   }, [dispatch])
 
+  const handleRefreshData = () => {
+    dispatch(fetchMarts(true))
+    dispatch(fetchWarehouses(true))
+    dispatch(fetchStaff())
+  }
+
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
   const handleOpenEdit = (mart) => {
@@ -268,16 +274,23 @@ export default function Marts() {
       <PageHeader
         title="Marts"
         subtitle="Manage dark store infrastructure"
-        action={!isSuperAdmin && (
-          <Button variant="primary" onClick={() => {
-            const randomRazorpayId = 'acc_' + Math.random().toString(36).substring(2, 16).toUpperCase();
-            setForm({ ...EMPTY, razorpay_id: randomRazorpayId });
-            setEditingMart(null);
-            setModalOpen(true);
-          }}>
-            + Add New Mart
-          </Button>
-        )}
+        action={
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={handleRefreshData}>
+              🔄 Refresh
+            </Button>
+            {!isSuperAdmin && (
+              <Button variant="primary" onClick={() => {
+                const randomRazorpayId = 'acc_' + Math.random().toString(36).substring(2, 16).toUpperCase();
+                setForm({ ...EMPTY, razorpay_id: randomRazorpayId });
+                setEditingMart(null);
+                setModalOpen(true);
+              }}>
+                + Add New Mart
+              </Button>
+            )}
+          </div>
+        }
       />
 
       <Grid columns={columns} data={marts} loading={loading} searchKey="name" />

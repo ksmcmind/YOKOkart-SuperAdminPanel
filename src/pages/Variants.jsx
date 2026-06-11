@@ -15,6 +15,9 @@ export default function Variants() {
   const isSuperAdmin = user?.role === 'super_admin'
 
   const [variants, setVariants] = useState([])
+  const [pagination, setPagination] = useState(null)
+  const [page, setPage] = useState(1)
+  const [limit, setLimit] = useState(50)
   const [loading, setLoading] = useState(false)
   const [open, setOpen] = useState(false)
   const [editingVariant, setEditingVariant] = useState(null)
@@ -39,17 +42,19 @@ export default function Variants() {
     details: []
   })
 
-  const loadVariants = async () => {
+  const loadVariants = async (targetPage = page, targetLimit = limit) => {
     setLoading(true)
     try {
       const qParams = new URLSearchParams()
       if (search) qParams.set('search', search)
       if (brand) qParams.set('brand', brand)
-      qParams.set('limit', '500') // fetch enough for client side pagination
+      qParams.set('page', String(targetPage))
+      qParams.set('limit', String(targetLimit))
 
       const res = await api.get(`/products/variants?${qParams.toString()}`)
       if (res.success) {
         setVariants(res.data?.variants || [])
+        setPagination(res.data?.pagination || null)
       }
     } catch (err) {
       console.error('Failed to load variants:', err)
@@ -60,8 +65,8 @@ export default function Variants() {
   }
 
   useEffect(() => {
-    loadVariants()
-  }, [brand])
+    loadVariants(page, limit)
+  }, [brand, page, limit])
 
   // Debounced search autocomplete
   useEffect(() => {
@@ -108,8 +113,9 @@ export default function Variants() {
       setSearch(s.name)
     }
     setShowSuggest(false)
+    setPage(1)
     // slight delay to let state commit
-    setTimeout(loadVariants, 50)
+    setTimeout(() => loadVariants(1), 50)
   }
 
   const handleEdit = (v) => {
@@ -262,7 +268,7 @@ export default function Variants() {
             className="w-full pl-9 pr-4 py-2 bg-gray-50 border-none rounded-lg text-sm focus:ring-0 focus:outline-none transition-all"
             value={search}
             onChange={e => { setSearch(e.target.value); setShowSuggest(true) }}
-            onKeyDown={e => e.key === 'Enter' && (loadVariants(), setShowSuggest(false))}
+            onKeyDown={e => e.key === 'Enter' && (setPage(1), loadVariants(1), setShowSuggest(false))}
             onFocus={() => suggestions.length > 0 && setShowSuggest(true)}
           />
           <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -308,11 +314,11 @@ export default function Variants() {
             placeholder="Filter by brand..."
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:border-primary-500 focus:ring-0 transition-all bg-white"
             value={brand}
-            onChange={e => setBrand(e.target.value)}
+            onChange={e => { setBrand(e.target.value); setPage(1); }}
           />
         </div>
 
-        <Button variant="primary" onClick={loadVariants} loading={loading}>Search</Button>
+        <Button variant="primary" onClick={() => { setPage(1); loadVariants(1, limit); }} loading={loading}>Search</Button>
       </div>
 
       <Grid
@@ -320,7 +326,11 @@ export default function Variants() {
         data={variants}
         loading={loading}
         showSearch={false}
-        pageSize={15}
+        totalItems={pagination?.total || 0}
+        page={page}
+        pageSize={limit}
+        onPageChange={(p) => setPage(p)}
+        onPageSizeChange={(sz) => { setPage(1); setLimit(sz); }}
         emptyText="No variants found matching criteria."
       />
 

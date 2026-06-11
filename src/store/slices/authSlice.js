@@ -86,6 +86,7 @@ const authSlice = createSlice({
   },
   reducers: {
     clearError: (state) => { state.error = null },
+    resetOtpSent: (state) => { state.otpSent = false },
   },
   extraReducers: (builder) => {
     builder
@@ -129,5 +130,5 @@ export const selectOtpSent  = (state) => state.auth.otpSent
 export const selectAuthLoading = (state) => state.auth.loading
 export const selectAuthError   = (state) => state.auth.error
 
-export const { clearError } = authSlice.actions
+export const { clearError, resetOtpSent } = authSlice.actions
 export default authSlice.reducer

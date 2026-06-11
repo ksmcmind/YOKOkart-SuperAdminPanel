@@ -1,7 +1,14 @@
 // src/pages/Suppliers.jsx
 import { useEffect, useState } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
-import api from '../api/index'
+import {
+  fetchSuppliers,
+  createSupplier,
+  updateSupplier,
+  toggleSupplierStatus,
+  bulkUploadSuppliers,
+  selectWarehouseSuppliers
+} from '../store/slices/warehouseSlice'
 import { showToast } from '../store/slices/uiSlice'
 import PageHeader from '../components/PageHeader'
 import Button from '../components/Button'
@@ -15,7 +22,7 @@ export default function Suppliers() {
   const dispatch = useDispatch()
   const user = useSelector((state) => state.auth.user)
   const isSuperAdmin = user?.role === 'super_admin'
-  const [suppliers, setSuppliers] = useState([])
+  const suppliers = useSelector(selectWarehouseSuppliers)
   const [loading, setLoading] = useState(false)
   const [statusTab, setStatusTab] = useState('active') // 'active' | 'inactive'
 
@@ -31,11 +38,8 @@ export default function Suppliers() {
   const loadSuppliers = async () => {
     setLoading(true)
     try {
-      const activeParam = statusTab === 'active' ? 'true' : 'false'
-      const res = await api.get(`/warehouse-inventory/suppliers?active=${activeParam}`)
-      if (res.success) {
-        setSuppliers(res.data || [])
-      }
+      const activeParam = statusTab === 'active'
+      await dispatch(fetchSuppliers({ active: activeParam }))
     } catch (err) {
       console.error(err)
       dispatch(showToast({ message: 'Failed to load suppliers list', type: 'error' }))
@@ -57,19 +61,16 @@ export default function Suppliers() {
 
     setSubmitting(true)
     try {
-      let res
       if (editingSupplier) {
-        res = await api.put(`/warehouse-inventory/suppliers/${editingSupplier.supplier_id}`, form)
+        await dispatch(updateSupplier({ id: editingSupplier.supplier_id, data: form })).unwrap()
       } else {
-        res = await api.post('/warehouse-inventory/suppliers', form)
+        await dispatch(createSupplier(form)).unwrap()
       }
-      if (res.success) {
-        dispatch(showToast({ message: editingSupplier ? 'Supplier updated successfully!' : 'Supplier registered successfully!', type: 'success' }))
-        setAddOpen(false)
-        setEditingSupplier(null)
-        setForm({ supplier_code: '', name: '', phone: '', email: '', address: '', gstin: '' })
-        loadSuppliers()
-      }
+      dispatch(showToast({ message: editingSupplier ? 'Supplier updated successfully!' : 'Supplier registered successfully!', type: 'success' }))
+      setAddOpen(false)
+      setEditingSupplier(null)
+      setForm({ supplier_code: '', name: '', phone: '', email: '', address: '', gstin: '' })
+      loadSuppliers()
     } catch (err) {
       console.error(err)
       dispatch(showToast({ message: editingSupplier ? 'Failed to update supplier' : 'Failed to register supplier', type: 'error' }))
@@ -80,11 +81,9 @@ export default function Suppliers() {
 
   const toggleStatus = async (supplierId, currentActive) => {
     try {
-      const res = await api.patch(`/warehouse-inventory/suppliers/${supplierId}/status`, { active: !currentActive })
-      if (res.success) {
-        dispatch(showToast({ message: 'Supplier status changed successfully', type: 'success' }))
-        loadSuppliers()
-      }
+      await dispatch(toggleSupplierStatus({ id: supplierId, active: !currentActive })).unwrap()
+      dispatch(showToast({ message: 'Supplier status changed successfully', type: 'success' }))
+      loadSuppliers()
     } catch (err) {
       console.error(err)
       dispatch(showToast({ message: 'Failed to toggle supplier status', type: 'error' }))
@@ -145,12 +144,17 @@ export default function Suppliers() {
         title="Suppliers Directory"
         subtitle="Manage active supply vendors, contact profiles, and tax identifiers."
       >
-        {!isSuperAdmin && (
-          <div className="flex gap-2">
-            <Button variant="secondary" onClick={() => setBulkOpen(true)}>📤 Bulk Import (CSV)</Button>
-            <Button variant="primary" onClick={() => { setEditingSupplier(null); setForm({ supplier_code: '', name: '', phone: '', email: '', address: '', gstin: '' }); setAddOpen(true); }}>➕ Add Supplier</Button>
-          </div>
-        )}
+        <div className="flex gap-2">
+          <Button variant="secondary" onClick={loadSuppliers} className="flex items-center gap-1.5">
+            🔄 Refresh
+          </Button>
+          {!isSuperAdmin && (
+            <>
+              <Button variant="secondary" onClick={() => setBulkOpen(true)}>📤 Bulk Import (CSV)</Button>
+              <Button variant="primary" onClick={() => { setEditingSupplier(null); setForm({ supplier_code: '', name: '', phone: '', email: '', address: '', gstin: '' }); setAddOpen(true); }}>➕ Add Supplier</Button>
+            </>
+          )}
+        </div>
       </PageHeader>
 
       <div className="flex border-b border-gray-100 gap-4">
@@ -275,17 +279,17 @@ export default function Suppliers() {
         onUpload={async (_, file) => {
           const formData = new FormData()
           formData.append('file', file)
-          const res = await api.post(`/warehouse-inventory/suppliers/bulk`, formData)
-          
-          if (res.success === false) {
+          try {
+            const res = await dispatch(bulkUploadSuppliers(formData)).unwrap()
             return {
-              errors: [res.message || 'Supplier import failed.']
+              jobId: res?.jobId,
+              totalRows: res?.totalRows,
+              created: res?.totalRows,
             }
-          }
-          return {
-            jobId: res.data?.jobId,
-            totalRows: res.data?.totalRows,
-            created: res.data?.totalRows,
+          } catch (err) {
+            return {
+              errors: [err?.message || 'Supplier import failed.']
+            }
           }
         }}
         onDone={() => {

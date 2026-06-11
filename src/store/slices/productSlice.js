@@ -15,7 +15,7 @@ import { showToast } from './uiSlice'
 
 export const fetchProducts = createAsyncThunk(
   'product/fetchAll',
-  async ({ categorySlug = null, subcategorySlug = null, search = '', code = '', brand = '', isActive = '', isVeg = '', page = 1, limit = 50 } = {}, { rejectWithValue }) => {
+  async ({ categorySlug = null, subcategorySlug = null, search = '', code = '', brand = '', isActive = '', isVeg = '', page = 1, limit = 50, productId = '' } = {}, { rejectWithValue }) => {
     try {
       const qs = new URLSearchParams()
       if (categorySlug)    qs.set('categorySlug', categorySlug)
@@ -25,12 +25,13 @@ export const fetchProducts = createAsyncThunk(
       if (brand)           qs.set('brand', brand)
       if (isActive !== '') qs.set('isActive', isActive)
       if (isVeg !== '')    qs.set('isVeg', isVeg)
+      if (productId)       qs.set('productId', productId)
       qs.set('page',  String(page))
       qs.set('limit', String(limit))
 
       const res = await api.get(`/products?${qs.toString()}`)
       if (!res.success) return rejectWithValue(res.message || 'Failed to load products')
-      return res.data
+      return { products: res.data || [], pagination: res.pagination }
     } catch (err) {
       return rejectWithValue(err?.message || 'Network error')
     }

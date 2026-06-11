@@ -44,6 +44,11 @@ export default function Warehouses() {
     dispatch(fetchStaff())
   }, [dispatch])
 
+  const handleRefreshData = () => {
+    dispatch(fetchWarehouses(true))
+    dispatch(fetchStaff())
+  }
+
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
   // Staff is loaded to dynamically resolve manager details on the client side
@@ -206,11 +211,18 @@ export default function Warehouses() {
       <PageHeader
         title="Warehouses"
         subtitle="Manage central warehouses and facility staff assignments"
-        action={!isSuperAdmin && (
-          <Button variant="primary" onClick={() => { setForm(EMPTY); setEditingWarehouse(null); setOpen(true) }}>
-            + Add Warehouse
-          </Button>
-        )}
+        action={
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={handleRefreshData}>
+              🔄 Refresh
+            </Button>
+            {!isSuperAdmin && (
+              <Button variant="primary" onClick={() => { setForm(EMPTY); setEditingWarehouse(null); setOpen(true) }}>
+                + Add Warehouse
+              </Button>
+            )}
+          </div>
+        }
       />
 
       <Grid

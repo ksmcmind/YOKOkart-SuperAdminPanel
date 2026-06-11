@@ -1,7 +1,19 @@
 // src/pages/PurchaseOrders.jsx
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
-import api from '../api/index'
+import {
+  fetchWarehouses,
+  fetchSuppliers,
+  fetchPOs,
+  createPO,
+  updatePOStatus,
+  receiveGoods,
+  fetchPODetails,
+  updateStockReceipt,
+  bulkUploadPOs,
+  setSelectedWarehouseId as setSelectedWarehouseIdAction,
+  selectAllWarehouses
+} from '../store/slices/warehouseSlice'
 import { showToast } from '../store/slices/uiSlice'
 import PageHeader from '../components/PageHeader'
 import Button from '../components/Button'
@@ -10,7 +22,7 @@ import Modal from '../components/Modal'
 import Badge from '../components/Badge'
 import Input, { Select, Textarea } from '../components/Input'
 import BulkUploadModal from '../components/BulkUploadModal'
-import AutocompleteVariantSelect from '../components/AutocompleteVariantSelect'
+import AlgoliaProductSearch from '../components/AlgoliaProductSearch'
 
 const PACKAGE_UNITS = [
   { value: 'box', label: 'Box' },
@@ -41,8 +53,11 @@ export default function PurchaseOrders() {
   const user = useSelector((state) => state.auth.user)
   const isSuperAdmin = user?.role === 'super_admin'
 
-  const [warehouses, setWarehouses] = useState([])
-  const [selectedWarehouseId, setSelectedWarehouseId] = useState('')
+  // Redux Selectors
+  const warehouses = useSelector(selectAllWarehouses)
+  const selectedWarehouseId = useSelector(state => state.warehouse.selectedWarehouseId)
+  const setSelectedWarehouseId = (val) => dispatch(setSelectedWarehouseIdAction(val))
+
   const [purchaseOrders, setPurchaseOrders] = useState([])
   const [loading, setLoading] = useState(false)
   const [statusFilter, setStatusFilter] = useState('') // '' = All
@@ -143,26 +158,20 @@ export default function PurchaseOrders() {
         notes: editReceiptForm.notes
       }
 
-      const res = await api.put(`/warehouse-inventory/purchase-orders/receipts/${selectedReceipt.receipt_id}`, payload)
-      if (res.success) {
-        dispatch(showToast({ message: 'Stock receipt updated successfully!', type: 'success' }))
-        setEditReceiptOpen(false)
-        
-        // Refresh the detail modal content
-        if (selectedItem) {
-          const detailRes = await api.get(`/warehouse-inventory/purchase-orders/${selectedItem.po_id}`)
-          if (detailRes.success) {
-            setSelectedItem(detailRes.data)
-          }
-        }
-        
-        // Refresh the PO list
-        fetchPurchaseOrders()
-      } else {
-        dispatch(showToast({ message: res.message || 'Update failed', type: 'error' }))
+      await dispatch(updateStockReceipt({ id: selectedReceipt.receipt_id, payload })).unwrap()
+      dispatch(showToast({ message: 'Stock receipt updated successfully!', type: 'success' }))
+      setEditReceiptOpen(false)
+      
+      // Refresh the detail modal content
+      if (selectedItem) {
+        const detailRes = await dispatch(fetchPODetails(selectedItem.po_id)).unwrap()
+        setSelectedItem(detailRes)
       }
+      
+      // Refresh the PO list
+      fetchPurchaseOrders()
     } catch (err) {
-      dispatch(showToast({ message: 'Failed to update stock receipt', type: 'error' }))
+      dispatch(showToast({ message: err || 'Failed to update stock receipt', type: 'error' }))
     } finally {
       setSubmitting(false)
     }
@@ -179,29 +188,28 @@ export default function PurchaseOrders() {
     }
   }
 
-  const loadWarehouses = async () => {
-    try {
-      const res = await api.get('/warehouses')
-      if (res.success) {
-        const list = res.data || []
-        setWarehouses(list)
-        if (list.length > 0) {
-          const activeOnes = list.filter(w => w.is_active)
-          const def = activeOnes.length > 0 ? activeOnes[0] : list[0]
-          setSelectedWarehouseId(def.warehouse_id)
-        }
-      }
-    } catch (err) {
-      console.error(err)
+  const loadWarehouses = () => {
+    dispatch(fetchWarehouses())
+  }
+
+  useEffect(() => {
+    if (warehouses.length > 0 && !selectedWarehouseId) {
+      const activeOnes = warehouses.filter(w => w.is_active)
+      const def = activeOnes.length > 0 ? activeOnes[0] : warehouses[0]
+      setSelectedWarehouseId(def.warehouse_id)
     }
+  }, [warehouses, selectedWarehouseId])
+
+  const handleRefreshData = () => {
+    dispatch(fetchWarehouses(true))
+    loadSuppliers()
+    fetchPurchaseOrders()
   }
 
   const loadSuppliers = async () => {
     try {
-      const res = await api.get('/warehouse-inventory/suppliers?active=true')
-      if (res.success) {
-        setSuppliers(res.data || [])
-      }
+      const res = await dispatch(fetchSuppliers({ active: true })).unwrap()
+      setSuppliers(res || [])
     } catch (err) {}
   }
 
@@ -209,10 +217,8 @@ export default function PurchaseOrders() {
     if (!selectedWarehouseId) return
     setLoading(true)
     try {
-      const res = await api.get(`/warehouse-inventory/purchase-orders?warehouseId=${selectedWarehouseId}`)
-      if (res.success) {
-        setPurchaseOrders(res.data || [])
-      }
+      const res = await dispatch(fetchPOs(selectedWarehouseId)).unwrap()
+      setPurchaseOrders(res || [])
     } catch (err) {
       console.error(err)
       dispatch(showToast({ message: 'Failed to load purchase orders', type: 'error' }))
@@ -270,7 +276,7 @@ export default function PurchaseOrders() {
 
     setSubmitting(true)
     try {
-      const res = await api.post('/warehouse-inventory/purchase-orders', {
+      await dispatch(createPO({
         warehouseId: selectedWarehouseId,
         supplierId: poForm.supplierId,
         expectedAt: poForm.expectedAt || null,
@@ -281,16 +287,14 @@ export default function PurchaseOrders() {
           receivingUnit: it.receivingUnit,
           unitCost: parseFloat(it.unitCost)
         }))
-      })
+      })).unwrap()
 
-      if (res.success) {
-        dispatch(showToast({ message: 'PO raised successfully!', type: 'success' }))
-        setPoOpen(false)
-        setPoForm(EMPTY_PO_FORM)
-        fetchPurchaseOrders()
-      }
+      dispatch(showToast({ message: 'PO raised successfully!', type: 'success' }))
+      setPoOpen(false)
+      setPoForm(EMPTY_PO_FORM)
+      fetchPurchaseOrders()
     } catch (err) {
-      dispatch(showToast({ message: 'Failed to create Purchase Order', type: 'error' }))
+      dispatch(showToast({ message: err || 'Failed to create Purchase Order', type: 'error' }))
     } finally {
       setSubmitting(false)
     }
@@ -298,11 +302,9 @@ export default function PurchaseOrders() {
 
   const advancePOStatus = async (poId, nextStatus) => {
     try {
-      const res = await api.post(`/warehouse-inventory/purchase-orders/${poId}/status`, { status: nextStatus })
-      if (res.success) {
-        dispatch(showToast({ message: `PO status updated to ${nextStatus}`, type: 'success' }))
-        fetchPurchaseOrders()
-      }
+      await dispatch(updatePOStatus({ id: poId, status: nextStatus })).unwrap()
+      dispatch(showToast({ message: `PO status updated to ${nextStatus}`, type: 'success' }))
+      fetchPurchaseOrders()
     } catch (err) {
       dispatch(showToast({ message: 'Failed to update PO status', type: 'error' }))
     }
@@ -312,31 +314,29 @@ export default function PurchaseOrders() {
     setSelectedItem(po)
     setLoading(true)
     try {
-      const res = await api.get(`/warehouse-inventory/purchase-orders/${po.po_id}`)
-      if (res.success) {
-        const fullPO = res.data
-        const grnItems = (fullPO.items || []).map(poi => ({
-          poItemId: poi.id,
-          variantId: poi.variant_id,
-          sku: poi.sku || poi.variant_sku,
-          productName: poi.product_name,
-          variantName: poi.variant_name,
-          qtyOrdered: poi.qty_ordered,
-          qtyReceivedRaw: '',
-          receivingUnit: poi.receiving_unit || 'box',
-          conversionFactor: '1',
-          batchNumber: '',
-          manufactureDate: '',
-          expiryDate: '',
-          bestBeforeDate: '',
-          ASL: '',
-          unitCost: poi.unit_cost || '',
-          reorderLevel: '50',
-          reorderQty: '200'
-        }))
-        setGrnForm({ invoiceNumber: '', notes: '', items: grnItems })
-        setGrnOpen(true)
-      }
+      const res = await dispatch(fetchPODetails(po.po_id)).unwrap()
+      const fullPO = res
+      const grnItems = (fullPO.items || []).map(poi => ({
+        poItemId: poi.id,
+        variantId: poi.variant_id,
+        sku: poi.sku || poi.variant_sku,
+        productName: poi.product_name,
+        variantName: poi.variant_name,
+        qtyOrdered: poi.qty_ordered,
+        qtyReceivedRaw: '',
+        receivingUnit: poi.receiving_unit || 'box',
+        conversionFactor: '1',
+        batchNumber: '',
+        manufactureDate: '',
+        expiryDate: '',
+        bestBeforeDate: '',
+        ASL: '',
+        unitCost: poi.unit_cost || '',
+        reorderLevel: '50',
+        reorderQty: '200'
+      }))
+      setGrnForm({ invoiceNumber: '', notes: '', items: grnItems })
+      setGrnOpen(true)
     } catch (err) {
       dispatch(showToast({ message: 'Failed to retrieve PO details', type: 'error' }))
     } finally {
@@ -400,33 +400,34 @@ export default function PurchaseOrders() {
 
     setSubmitting(true)
     try {
-      const res = await api.post(`/warehouse-inventory/purchase-orders/${selectedItem.po_id}/receive`, {
-        invoiceNumber: grnForm.invoiceNumber,
-        notes: grnForm.notes,
-        items: grnForm.items.map(it => ({
-          poItemId: it.poItemId,
-          variantId: it.variantId,
-          qtyReceivedRaw: parseFloat(it.qtyReceivedRaw || 0),
-          receivingUnit: it.receivingUnit,
-          conversionFactor: parseFloat(it.conversionFactor || 1),
-          batchNumber: it.batchNumber || null,
-          manufactureDate: it.manufactureDate || null,
-          expiryDate: it.expiryDate || null,
-          bestBeforeDate: it.bestBeforeDate || null,
-          ASL: it.ASL || null,
-          unitCost: parseFloat(it.unitCost || 0),
-          reorderLevel: parseInt(it.reorderLevel || 50, 10),
-          reorderQty: parseInt(it.reorderQty || 200, 10)
-        }))
-      })
+      await dispatch(receiveGoods({
+        id: selectedItem.po_id,
+        payload: {
+          invoiceNumber: grnForm.invoiceNumber,
+          notes: grnForm.notes,
+          items: grnForm.items.map(it => ({
+            poItemId: it.poItemId,
+            variantId: it.variantId,
+            qtyReceivedRaw: parseFloat(it.qtyReceivedRaw || 0),
+            receivingUnit: it.receivingUnit,
+            conversionFactor: parseFloat(it.conversionFactor || 1),
+            batchNumber: it.batchNumber || null,
+            manufactureDate: it.manufactureDate || null,
+            expiryDate: it.expiryDate || null,
+            bestBeforeDate: it.bestBeforeDate || null,
+            ASL: it.ASL || null,
+            unitCost: parseFloat(it.unitCost || 0),
+            reorderLevel: parseInt(it.reorderLevel || 50, 10),
+            reorderQty: parseInt(it.reorderQty || 200, 10)
+          }))
+        }
+      })).unwrap()
 
-      if (res.success) {
-        dispatch(showToast({ message: 'Goods received successfully into batches!', type: 'success' }))
-        setGrnOpen(false)
-        fetchPurchaseOrders()
-      }
+      dispatch(showToast({ message: 'Goods received successfully into batches!', type: 'success' }))
+      setGrnOpen(false)
+      fetchPurchaseOrders()
     } catch (err) {
-      dispatch(showToast({ message: 'Failed to process goods receipt note', type: 'error' }))
+      dispatch(showToast({ message: err || 'Failed to process goods receipt note', type: 'error' }))
     } finally {
       setSubmitting(false)
     }
@@ -449,11 +450,9 @@ export default function PurchaseOrders() {
   const openPODetails = async (po) => {
     setLoading(true)
     try {
-      const res = await api.get(`/warehouse-inventory/purchase-orders/${po.po_id}`)
-      if (res.success) {
-        setSelectedItem(res.data)
-        setPoDetailOpen(true)
-      }
+      const res = await dispatch(fetchPODetails(po.po_id)).unwrap()
+      setSelectedItem(res)
+      setPoDetailOpen(true)
     } catch (err) {
       dispatch(showToast({ message: 'Failed to retrieve PO details', type: 'error' }))
     } finally {
@@ -508,12 +507,17 @@ export default function PurchaseOrders() {
         title="Purchase Orders & GRN"
         subtitle="Raise procurement POs, manage vendor timelines, and execute physical supplier Goods Receipts."
       >
-        {!isSuperAdmin && (
-          <div className="flex gap-2">
-            <Button variant="secondary" onClick={() => setPoBulkOpen(true)}>📤 Bulk PO (CSV)</Button>
-            <Button variant="primary" onClick={() => { setPoForm(EMPTY_PO_FORM); setPoOpen(true); }}>➕ Raise Purchase Order</Button>
-          </div>
-        )}
+        <div className="flex gap-2">
+          <Button variant="secondary" onClick={handleRefreshData} className="flex items-center gap-1.5">
+            🔄 Refresh
+          </Button>
+          {!isSuperAdmin && (
+            <>
+              <Button variant="secondary" onClick={() => setPoBulkOpen(true)}>📤 Bulk PO (CSV)</Button>
+              <Button variant="primary" onClick={() => { setPoForm(EMPTY_PO_FORM); setPoOpen(true); }}>➕ Raise Purchase Order</Button>
+            </>
+          )}
+        </div>
       </PageHeader>
 
       <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -635,13 +639,17 @@ export default function PurchaseOrders() {
                 {poForm.items.map((it, idx) => (
                   <div key={idx} className="flex gap-2 items-end bg-white p-3 rounded-lg border border-slate-100 shadow-sm relative pr-8">
                     <div className="flex-1">
-                      <label className="text-[10px] font-black text-slate-400 block mb-1">Search Catalog Variant *</label>
-                      <AutocompleteVariantSelect
-                        value={it.variantId}
-                        displayLabel={it.displayLabel}
-                        onChange={(varId, label) => {
-                          updatePOItemRow(idx, 'variantId', varId);
-                          updatePOItemRow(idx, 'displayLabel', label);
+                      <AlgoliaProductSearch
+                        mode="variant"
+                        label="Search Catalog Variant *"
+                        value={it.displayLabel}
+                        onSelect={(v) => {
+                          updatePOItemRow(idx, 'variantId', v.variantId);
+                          updatePOItemRow(idx, 'displayLabel', v.displayLabel);
+                        }}
+                        onClear={() => {
+                          updatePOItemRow(idx, 'variantId', '');
+                          updatePOItemRow(idx, 'displayLabel', '');
                         }}
                       />
                     </div>
@@ -1112,24 +1120,23 @@ export default function PurchaseOrders() {
           const formData = new FormData()
           formData.append('file', file)
           formData.append('warehouseId', selectedWarehouseId)
-          const res = await api.post(`/warehouse-inventory/purchase-orders/bulk-parse`, formData)
-          
-          if (res.success === false) {
-            return {
-              errors: [res.message || 'File parsing failed. Please verify catalog and supplier codes.']
+          try {
+            const res = await dispatch(bulkUploadPOs({ warehouseId: selectedWarehouseId, formData })).unwrap()
+            if (res.data && res.data.createdDirectly) {
+              return {
+                totalRows: res.data.totalRows,
+                created: res.data.count,
+              }
+            } else {
+              openPOParsedData(res.data)
+              return {
+                totalRows: res.data?.length,
+                created: res.data?.length,
+              }
             }
-          }
-
-          if (res.data && res.data.createdDirectly) {
+          } catch (err) {
             return {
-              totalRows: res.data.totalRows,
-              created: res.data.count,
-            }
-          } else {
-            openPOParsedData(res.data)
-            return {
-              totalRows: res.data?.length,
-              created: res.data?.length,
+              errors: [err?.message || 'File parsing failed. Please verify catalog and supplier codes.']
             }
           }
         }}

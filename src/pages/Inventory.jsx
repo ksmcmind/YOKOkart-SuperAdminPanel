@@ -26,6 +26,8 @@ import {
     selectFilteredPagination,
     selectInventorySummary,
     selectInventorySummaryLoading,
+    fetchMartBatches,
+    fetchItemTransactionsFiltered,
 } from '../store/slices/invetoryslice'
 import { showToast } from '../store/slices/uiSlice'
 import PageHeader from '../components/PageHeader'
@@ -39,7 +41,7 @@ import useAuth from '../hooks/useAuth'
 import useMart from '../hooks/useMart'
 import MartSelector from '../components/MartSelector'
 import { fetchMarts } from '../store/slices/martSlice'
-import api from '../api/index'
+import AlgoliaProductSearch from '../components/AlgoliaProductSearch'
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -97,12 +99,12 @@ const downloadXLSXTemplate = () => {
 // ── Empty forms ───────────────────────────────────────────────────────────────
 
 const EMPTY_FORM = {
-    product_id: '', variant_id: '', sale_price: '', mrp: '',
+    product_id: '', variant_id: '', variant_label: '', sale_price: '', mrp: '',
     stock_qty: '', stock_unit: 'pcs', low_stock_alert: '10',
     type: 'restock', expiry_date: '', batch_number: '', aisle_location: '', is_active: true,
 }
 
-const EMPTY_RESTOCK_FORM = { stock_qty: '', mode: 'add', txn_type: 'restock', reason: '' }
+const EMPTY_RESTOCK_FORM = { stock_qty: '', mode: 'add', txn_type: 'restock', reason: '', batch_number: '' }
 
 // These are the "committed" filters — what was last sent to the backend.
 // The FilterBar maintains its own draft internally.
@@ -517,7 +519,10 @@ function RestockModal({ open, onClose, item, martId }) {
     const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
     const currentQty = parseFloat(item.stock_qty)
     const inputQty = parseFloat(form.stock_qty) || 0
-    const projected = form.mode === 'add' ? currentQty + inputQty : inputQty
+    const isSubtractive = ['return', 'damage', 'expired', 'theft', 'transfer', 'sale'].includes(form.txn_type)
+    const projected = form.mode === 'add'
+        ? (isSubtractive ? currentQty - inputQty : currentQty + inputQty)
+        : inputQty
     const isNeg = projected < 0
 
     const handleSubmit = async () => {
@@ -531,8 +536,8 @@ function RestockModal({ open, onClose, item, martId }) {
             dispatch(showToast({ message: `Result would be negative (${projected})`, type: 'error' })); return
         }
         const action = await dispatch(restockInventoryItem({
-            mongo_product_id: item.mongo_product_id,
-            mongo_mart_id: martId,
+            product_id: item.product_id,
+            martId: martId,
             variant_id: item.variant_id,
             sale_price: parseFloat(item.sale_price),
             mrp: parseFloat(item.mrp),
@@ -541,7 +546,7 @@ function RestockModal({ open, onClose, item, martId }) {
             low_stock_alert: parseFloat(item.low_stock_alert),
             aisle_location: item.aisle_location || null,
             expiry_date: item.expiry_date || null,
-            batch_number: item.batch_number || null,
+            batch_number: form.batch_number || null,
             mode: form.mode,
             txn_type: form.txn_type,
             type: item.type,
@@ -551,7 +556,7 @@ function RestockModal({ open, onClose, item, martId }) {
     }
 
     return (
-        <Modal title={`Restock — ${item.product_name || 'Stock Product'} [${item.product_code || item.mongo_product_id} / ${item.variant_code || item.variant_id}]`}
+        <Modal title={`Restock — ${item.product_name || 'Stock Product'} [${item.product_code || item.product_id} / ${item.variant_code || item.variant_id}]`}
             open={open} onClose={onClose} size="md"
             footer={<><Button variant="secondary" onClick={onClose}>Cancel</Button><Button variant="primary" loading={restocking} onClick={handleSubmit}>Update Stock</Button></>}>
             <div className="space-y-5">
@@ -581,6 +586,10 @@ function RestockModal({ open, onClose, item, martId }) {
                         {USER_TXN_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                     </Select>
                 </div>
+                <div className="grid grid-cols-2 gap-4">
+                    <Input label="Batch Number / ID"
+                        value={form.batch_number} onChange={e => set('batch_number', e.target.value)} placeholder="e.g. BATCH-001 (Optional)" />
+                </div>
                 <div className={`rounded-lg px-4 py-3 border ${isNeg ? 'bg-red-50 border-red-200' : 'bg-green-50 border-green-200'}`}>
                     <p className="text-[10px] uppercase tracking-widest font-bold text-gray-500">Projected Stock</p>
                     <p className={`text-lg font-bold ${isNeg ? 'text-red-600' : 'text-green-700'}`}>
@@ -600,6 +609,7 @@ const TXN_TYPES_ALL = ['restock', 'sale', 'return', 'damage', 'expired', 'theft'
 const EMPTY_TXN_FILTERS = { type: '', from: '', to: '', page: 1, limit: 50 }
 
 function HistoryModal({ open, onClose, item }) {
+    const dispatch = useDispatch()
     const [filters, setFilters] = useState(EMPTY_TXN_FILTERS)
     const [loading, setLoading] = useState(false)
     const [txns, setTxns] = useState([])
@@ -613,25 +623,29 @@ function HistoryModal({ open, onClose, item }) {
 
     useEffect(() => {
         if (!open || !item?.id) return
-        const params = new URLSearchParams({ limit: filters.limit, page: filters.page })
-        if (filters.type) params.set('type', filters.type)
-        if (filters.from) params.set('from', filters.from)
-        if (filters.to) params.set('to', filters.to)
 
         setLoading(true)
         setError(null)
-        api.get(`/inventory/${item.id}/transactions?${params}`)
-            .then(res => {
-                if (res.success) {
-                    setTxns(res.data || [])
-                    setPagination(res.pagination || null)
-                } else {
-                    setError(res.message || 'Failed to load')
-                }
-            })
-            .catch(err => setError(err?.message || 'Network error'))
-            .finally(() => setLoading(false))
-    }, [open, item?.id, filters])
+        dispatch(fetchItemTransactionsFiltered({
+            id: item.id,
+            limit: filters.limit,
+            page: filters.page,
+            type: filters.type,
+            from: filters.from,
+            to: filters.to
+        }))
+        .unwrap()
+        .then(res => {
+            if (res.success) {
+                setTxns(res.data || [])
+                setPagination(res.pagination || null)
+            } else {
+                setError(res.message || 'Failed to load')
+            }
+        })
+        .catch(err => setError(err?.message || 'Network error'))
+        .finally(() => setLoading(false))
+    }, [open, item?.id, filters, dispatch])
 
     if (!item) return null
 
@@ -642,7 +656,7 @@ function HistoryModal({ open, onClose, item }) {
     const net = txns.reduce((s, t) => s + parseFloat(t.qty_change || 0), 0)
 
     return (
-        <Modal title={`Stock History — ${item.product_name || 'Stock Product'} [${item.product_code || item.mongo_product_id} / ${item.variant_code || item.variant_id}]`}
+        <Modal title={`Stock History — ${item.product_name || 'Stock Product'} [${item.product_code || item.product_id} / ${item.variant_code || item.variant_id}]`}
             open={open} onClose={onClose} size="xl"
             footer={<Button variant="secondary" onClick={onClose}>Close</Button>}>
 
@@ -911,48 +925,48 @@ export default function Inventory() {
             });
     }, [allMartBatches, batchSearch, batchFilter]);
 
-    // ── Load ALL batches once when mart or batches tab activates ─────────────
-    // Backend returns Redis-cached full list — client does all filtering in JS
     useEffect(() => {
         if (!martId || activeTab !== 'batches') return
         setMartBatchesLoading(true)
-        api.get(`/inventory/batches?martId=${martId}`)
-            .then(res => {
-                if (res.success) setAllMartBatches(res.data || [])
-                else setAllMartBatches([])
+        dispatch(fetchMartBatches(martId))
+            .unwrap()
+            .then(data => {
+                setAllMartBatches(data)
             })
             .catch(err => { console.error('Failed to fetch batches:', err); setAllMartBatches([]) })
             .finally(() => setMartBatchesLoading(false))
-    }, [martId, activeTab])
+    }, [martId, activeTab, dispatch])
 
     const batchColumns = [
         {
             key: 'product', label: 'Product',
             render: r => (
-                <div>
+                <div className="space-y-0.5">
                     <p className="font-bold text-gray-900 text-xs leading-tight">{r.product_name || 'Unknown'}</p>
-                    {r.brand_name && (
-                        <div className="mt-1">
-                            <span className="bg-amber-50 text-amber-800 text-[8px] font-extrabold px-1 py-0.5 rounded border border-amber-200 uppercase tracking-wider">
-                                🏷️ {r.brand_name}
-                            </span>
-                        </div>
-                    )}
-                    {r.display_size && (
-                        <div className="text-[10px] text-slate-400 font-bold mt-0.5">{r.display_size}</div>
-                    )}
-                    <span className="bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded font-mono text-[10px] font-bold border border-gray-200 mt-1 inline-block">#{r.product_code}</span>
+                    <span className="bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded font-mono text-[10px] font-bold border border-gray-200 inline-block">#{r.product_code}</span>
                 </div>
             ),
         },
         {
             key: 'variant', label: 'Variant',
             render: r => (
-                <div className="flex items-center gap-1.5">
-                    <span className="bg-blue-50 text-blue-700 text-[9px] font-extrabold px-1.5 py-0.5 rounded border border-blue-100 uppercase">
-                        {r.variant_code || 'default'}
-                    </span>
-                    {r.variant_name && <span className="text-[10px] text-gray-500">{r.variant_name}</span>}
+                <div className="space-y-0.5">
+                    <p className="font-semibold text-gray-800 text-xs leading-tight">{r.variant_name || '—'}</p>
+                    <div className="flex items-center gap-1 flex-wrap">
+                        <span className="bg-blue-50 text-blue-700 text-[9px] font-extrabold px-1.5 py-0.5 rounded border border-blue-100 uppercase font-mono">
+                            {r.variant_code || 'default'}
+                        </span>
+                        {r.display_size && (
+                            <span className="bg-violet-50 text-violet-700 text-[9px] font-bold px-1.5 py-0.5 rounded border border-violet-100 uppercase">
+                                {r.display_size}
+                            </span>
+                        )}
+                        {r.unit_type && (
+                            <span className="bg-teal-50 text-teal-700 text-[9px] font-bold px-1.5 py-0.5 rounded border border-teal-100 uppercase">
+                                {r.unit_type}
+                            </span>
+                        )}
+                    </div>
                 </div>
             ),
         },
@@ -961,22 +975,20 @@ export default function Inventory() {
             key: 'stock', label: 'Available',
             render: r => <span className="font-bold text-gray-800 text-xs">{parseFloat(r.stock_qty).toLocaleString()} <span className="text-[9px] text-gray-500 uppercase">pcs</span></span>,
         },
-        {
-            key: 'reserved', label: 'Reserved',
-            render: r => <span className="font-bold text-yellow-600 text-xs">{r.reserved_qty ?? 0}</span>,
-        },
-        {
-            key: 'dispatched', label: 'Dispatched',
-            render: r => <span className="font-bold text-blue-600 text-xs">{r.dispatched_qty ?? 0}</span>,
-        },
+
         {
             key: 'expiry', label: 'Expiry',
             render: r => {
                 if (!r.expiry_date) return <span className="text-gray-400 text-xs">—</span>
                 const d = new Date(r.expiry_date)
                 const diff = Math.ceil((d - new Date()) / (1000 * 60 * 60 * 24))
-                const color = diff < 0 ? 'text-rose-700 font-black' : diff <= 60 ? 'text-orange-600 font-bold' : 'text-gray-700'
-                return <span className={`text-xs ${color}`}>{d.toLocaleDateString('en-GB')}{diff <= 60 && <span className="ml-1 text-[9px]">{diff < 0 ? '🚨 EXP' : `🚨 ${diff}d`}</span>}</span>
+                // Adapt to parent row bg: expired row is dark red (need white/light text), expiring soon is orange
+                const color = diff < 0
+                    ? 'text-red-200 font-black'
+                    : diff <= 60
+                        ? 'text-orange-700 font-bold'
+                        : 'text-gray-700'
+                return <span className={`text-xs ${color}`}>{d.toLocaleDateString('en-GB')}{diff <= 60 && <span className="ml-1 text-[9px]">{diff < 0 ? '🚨 EXP' : `⏳ ${diff}d`}</span>}</span>
             },
         },
         {
@@ -1028,8 +1040,8 @@ export default function Inventory() {
         if (parseFloat(form.sale_price) > parseFloat(form.mrp)) { dispatch(showToast({ message: 'Sale price cannot exceed MRP', type: 'error' })); return }
 
         const action = await dispatch(addInventoryItem({
-            mongo_product_id: form.product_id, variant_id: form.variant_id,
-            mongo_mart_id: martId, mongo_staff_id: staffId,
+            product_id: form.product_id, variant_id: form.variant_id,
+            martId: martId,
             sale_price: parseFloat(form.sale_price), mrp: parseFloat(form.mrp),
             stock_qty: parseFloat(form.stock_qty), stock_unit: form.stock_unit,
             low_stock_alert: parseFloat(form.low_stock_alert), type: form.type,
@@ -1057,25 +1069,10 @@ export default function Inventory() {
             key: 'details', label: 'Product & Variant Details',
             render: r => (
                 <div>
-                    <p className="font-bold text-gray-900 leading-tight text-xs">{r.product_name || 'Unknown Product'}</p>
+                    <p className="font-bold text-gray-900 leading-tight text-xs">{r.variant_name || r.product_name || '—'}</p>
                     {r.display_size && (
                         <div className="text-[10px] text-slate-400 font-bold mt-0.5">{r.display_size}</div>
                     )}
-                    <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                        {r.brand_name && (
-                            <span className="bg-amber-50 text-amber-800 text-[9px] font-extrabold px-1.5 py-0.5 rounded border border-amber-200 uppercase tracking-wider">
-                                🏷️ {r.brand_name}
-                            </span>
-                        )}
-                        <span className="bg-blue-50 text-blue-700 text-[9px] font-extrabold px-1.5 py-0.5 rounded border border-blue-100 uppercase">
-                            Var: {r.variant_code || 'default'}
-                        </span>
-                        {r.variant_name && (
-                            <span className="text-[10px] font-medium text-gray-500 leading-normal">
-                                {r.variant_name}
-                            </span>
-                        )}
-                    </div>
                 </div>
             )
         },
@@ -1108,14 +1105,29 @@ export default function Inventory() {
 
         {
             key: 'stock', label: 'Inventory',
-            render: r => {
+            // Row-level expiry styling takes priority — don't double-color the cell
+            className: r => {
+                const isExpired = checkIsExpired(r.expiry_date);
+                const isExpiring = checkIsExpiringSoon(r.expiry_date);
+                if (isExpired || isExpiring) return ''; // Row bg already handles it
                 const isLow = parseFloat(r.stock_qty) <= parseFloat(r.low_stock_alert)
+                return isLow ? 'bg-red-50 text-red-600 font-semibold' : ''
+            },
+            render: r => {
+                const isExpired = checkIsExpired(r.expiry_date);
+                const isExpiring = checkIsExpiringSoon(r.expiry_date);
+                const isLow = parseFloat(r.stock_qty) <= parseFloat(r.low_stock_alert)
+                const qtyColor = isExpired
+                    ? 'text-red-200 font-bold'
+                    : isExpiring
+                        ? 'text-orange-800 font-bold'
+                        : isLow ? 'text-red-600 font-bold' : 'text-gray-800 font-bold'
                 return (
                     <div className="flex items-center gap-3 text-[11px]">
                         <div className="flex items-center gap-1">
                             <span className="text-gray-400 font-bold text-[9px] uppercase">Qty:</span>
-                            <span className={`font-bold ${isLow ? 'text-red-600' : 'text-gray-800'}`}>
-                                {parseFloat(r.stock_qty).toLocaleString()}<span className="ml-0.5 text-[9px] uppercase text-gray-500">pcs</span>
+                            <span className={qtyColor}>
+                                {parseFloat(r.stock_qty).toLocaleString()}<span className="ml-0.5 text-[9px] uppercase opacity-70">pcs</span>
                             </span>
                         </div>
                         <div className="flex items-center gap-1">
@@ -1131,66 +1143,13 @@ export default function Inventory() {
             render: r => (
                 <div className="flex items-center gap-3 text-[10px]">
                     <div className="flex items-center gap-1">
-                        <span className="text-gray-400 font-bold text-[9px] uppercase">Batch:</span>
-                        <EditableCell value={r.batch_number || '—'} onSave={v => handleInlineUpdate(r.id, 'batch_number', v)} />
-                    </div>
-                    <div className="flex items-center gap-1">
                         <span className="text-gray-400 font-bold text-[9px] uppercase">Aisle:</span>
                         <EditableCell value={r.aisle_location || '—'} onSave={v => handleInlineUpdate(r.id, 'aisle_location', v)} />
                     </div>
                 </div>
             ),
         },
-        {
-            key: 'dates', label: 'Dates',
-            render: r => {
-                const parseDate = (dStr) => {
-                    if (!dStr) return null;
-                    const parts = dStr.slice(0, 10).split('-');
-                    if (parts.length === 3) {
-                        if (parts[2].length === 4) return new Date(parts[2], parts[1] - 1, parts[0]);
-                        if (parts[0].length === 4) return new Date(parts[0], parts[1] - 1, parts[2]);
-                    }
-                    return new Date(dStr);
-                };
-                const expDate = parseDate(r.expiry_date);
-                const today = new Date();
-                today.setHours(0, 0, 0, 0);
-                if (expDate) expDate.setHours(0, 0, 0, 0);
-                const diffTime = expDate ? expDate - today : null;
-                const diffDays = diffTime !== null ? Math.ceil(diffTime / (1000 * 60 * 60 * 24)) : null;
 
-                const isNearExpiry = diffDays !== null && diffDays <= 60;
-                const isExpired = diffDays !== null && diffDays < 0;
-
-                let expColor = "text-gray-700";
-                if (isExpired) {
-                    expColor = "text-rose-700 font-black animate-pulse bg-rose-50 border border-rose-100 rounded px-1.5 py-0.5 shadow-[0_0_8px_rgba(244,63,94,0.4)]";
-                } else if (isNearExpiry) {
-                    expColor = "text-rose-600 font-extrabold animate-pulse bg-rose-50 border border-rose-100 rounded px-1.5 py-0.5 shadow-[0_0_8px_rgba(244,63,94,0.4)]";
-                }
-
-                return (
-                    <div className="flex flex-col gap-1 text-[10px]">
-                        <div className="flex items-center gap-1.5">
-                            <span className="text-gray-400 font-bold text-[9px] uppercase">Exp:</span>
-                            <span className={expColor}>
-                                <EditableCell value={r.expiry_date?.slice(0, 10) || 'SET'} type="date" onSave={v => handleInlineUpdate(r.id, 'expiry_date', v)} />
-                            </span>
-                            {isNearExpiry && (
-                                <span className="text-[8px] font-black text-rose-600 animate-pulse">
-                                    {isExpired ? "🚨 EXP" : `🚨 ${diffDays}d`}
-                                </span>
-                            )}
-                        </div>
-                        <div className="flex items-center gap-1">
-                            <span className="text-gray-400 font-bold text-[9px] uppercase">In:</span>
-                            <span className="text-gray-600 font-medium">{r.last_restocked_at ? new Date(r.last_restocked_at).toLocaleDateString('en-GB') : '—'}</span>
-                        </div>
-                    </div>
-                );
-            }
-        },
         {
             key: 'status', label: 'Active',
             render: r => (
@@ -1417,13 +1376,16 @@ export default function Inventory() {
                         data={sortedMartBatches}
                         loading={martBatchesLoading}
                         emptyText="No product batches found matching search criteria."
-                        pagination={false}
+                        pagination={true}
+                        pageSize={25}
                         showSearch={false}
                         rowClassName={row => {
                             const isExpired = checkIsExpired(row.expiry_date);
                             const isExpiring = checkIsExpiringSoon(row.expiry_date);
+                            const isLow = parseFloat(row.stock_qty) > 0 && parseFloat(row.stock_qty) <= parseFloat(row.low_stock_alert || 10);
                             if (isExpired) return 'bg-red-900 text-white font-semibold border-l-4 border-red-600';
-                            if (isExpiring) return 'bg-rose-50/60 text-rose-900 border-l-4 border-rose-400 font-medium';
+                            if (isExpiring) return 'bg-orange-50 text-orange-950 border-l-4 border-orange-500 font-medium';
+                            if (isLow) return 'bg-red-50 text-red-900 border-l-4 border-red-500 font-semibold';
                             return '';
                         }}
                     />
@@ -1434,20 +1396,24 @@ export default function Inventory() {
                     data={sortedFilteredItems}
                     loading={filteredLoad}
                     emptyText="No inventory items match your filters."
-                    pagination={false}
+                    pagination={true}
                     showSearch={false}
+                    totalItems={pagination?.total || 0}
+                    page={committedFilters.page}
+                    pageSize={committedFilters.limit || 25}
+                    onPageChange={handlePageChange}
+                    onPageSizeChange={(sz) => setCommittedFilters(prev => ({ ...prev, page: 1, limit: sz }))}
                     rowClassName={row => {
                         const isExpired = checkIsExpired(row.expiry_date);
                         const isExpiring = checkIsExpiringSoon(row.expiry_date);
+                        const isLow = parseFloat(row.stock_qty) <= parseFloat(row.low_stock_alert);
                         if (isExpired) return 'bg-red-900 text-white font-semibold border-l-4 border-red-600';
-                        if (isExpiring) return 'bg-rose-50/60 text-rose-900 border-l-4 border-rose-400 font-medium';
+                        if (isExpiring) return 'bg-orange-50 text-orange-950 border-l-4 border-orange-500 font-medium';
+                        if (isLow) return 'bg-red-50 text-red-900 border-l-4 border-red-500 font-semibold';
                         return '';
                     }}
                 />
             )}
-
-            {/* Pagination */}
-            {martId && activeTab === 'inventory' && <PaginationBar pagination={pagination} onPageChange={handlePageChange} />}
 
             {/* Add Modal */}
             <Modal title="Add Inventory Item" open={addOpen} onClose={() => setAddOpen(false)} size="lg"
@@ -1457,10 +1423,27 @@ export default function Inventory() {
                         <h4 className="text-[10px] font-extrabold text-primary-600 uppercase tracking-widest flex items-center gap-2">
                             <span className="w-1 h-3 bg-primary-600 rounded-full" />Product Reference
                         </h4>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                            <Input label="Product ID (Mongo) *" value={form.product_id} onChange={e => setF('product_id', e.target.value)} placeholder="64f1a2b3c4d5e6f7a8b9c0d1" />
-                            <Input label="Variant ID *" value={form.variant_id} onChange={e => setF('variant_id', e.target.value)} placeholder="VID-AMUL-500" />
-                        </div>
+                        <AlgoliaProductSearch
+                            mode="variant"
+                            label="Search Catalog Variant *"
+                            value={form.variant_label}
+                            placeholder="Search by brand, product name, or SKU…"
+                            onSelect={(v) => {
+                                setF('product_id', v.productId)
+                                setF('variant_id', v.variantId)
+                                setF('variant_label', v.displayLabel)
+                            }}
+                            onClear={() => {
+                                setF('product_id', '')
+                                setF('variant_id', '')
+                                setF('variant_label', '')
+                            }}
+                        />
+                        {form.product_id && (
+                            <p className="text-[10px] text-gray-400 font-mono">
+                                Product ID: {form.product_id} · Variant ID: {form.variant_id}
+                            </p>
+                        )}
                     </section>
                     <section className="space-y-4">
                         <h4 className="text-[10px] font-extrabold text-primary-600 uppercase tracking-widest flex items-center gap-2">

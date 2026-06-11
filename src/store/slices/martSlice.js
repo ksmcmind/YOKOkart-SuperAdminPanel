@@ -4,13 +4,14 @@ import api from '../../api/index'
 
 export const fetchMarts = createAsyncThunk(
   'mart/fetchAll',
-  async (_, { rejectWithValue }) => {
+  async (force, { rejectWithValue }) => {
     const res = await api.get('/marts')
     if (!res.success) return rejectWithValue(res.message)
     return res.data
   },
   {
-    condition: (_, { getState }) => {
+    condition: (force, { getState }) => {
+      if (force === true) return true
       const { mart } = getState()
       if (mart.list.length > 0 && !mart.loading) return false
     }
