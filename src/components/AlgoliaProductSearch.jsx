@@ -92,7 +92,7 @@ export default function AlgoliaProductSearch({
                 (v.sku || '').toLowerCase().includes(qLower)
               ) {
                 items.push({
-                  variantId: v.variant_id || v.variantId || v.sku,
+                  variantId: v.variant_id || v.variantId || prod.objectID || prod.product_id,
                   variantName: v.variant_name,
                   sku: v.sku,
                   productName: prod.name,
@@ -109,7 +109,7 @@ export default function AlgoliaProductSearch({
         } else {
           // product mode
           setSuggestions(hits.map(prod => ({
-            productId: prod.objectID || prod.product_id,
+            productId: prod.product_id || prod.objectID,
             productCode: prod.product_code,
             productName: prod.name,
             brandName: prod.brand || 'Generic',

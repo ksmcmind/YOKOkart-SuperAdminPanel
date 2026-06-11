@@ -1,6 +1,7 @@
 // src/pages/StockTransfers.jsx
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
+import * as XLSX from 'xlsx'
 import api from '../api/index'
 import { showToast } from '../store/slices/uiSlice'
 import {
@@ -20,6 +21,45 @@ import Badge from '../components/Badge'
 import Input, { Select, Textarea } from '../components/Input'
 import StatCard from '../components/StatCard'
 import AlgoliaProductSearch from '../components/AlgoliaProductSearch'
+import BulkUploadModal from '../components/BulkUploadModal'
+
+// ── Constants for Bulk Upload ────────────────────────────────────────────────
+
+const SCHEMA_FIELDS = [
+  'product_code', 'variant_code', 'warehouse_code', 'mart_code', 'batch_number', 'qty_dispatched', 'status', 'notes'
+]
+
+const FIELD_VALIDATORS = {
+  product_code: v => (v || '').trim().length > 0 || 'Product code is required',
+  variant_code: v => (v || '').trim().length > 0 || 'Variant code is required',
+  warehouse_code: v => (v || '').trim().length > 0 || 'Warehouse code is required',
+  mart_code: v => (v || '').trim().length > 0 || 'Mart code is required',
+  batch_number: v => (v || '').trim().length > 0 || 'Batch number is required',
+  qty_dispatched: v => { const n = parseFloat(v); if (isNaN(n)) return 'must be a number'; if (n <= 0) return 'must be > 0'; return true },
+  status: v => { if (!v || !v.trim()) return true; return ['created', 'dispatched', 'received', 'cancelled'].includes((v || '').toLowerCase().trim()) || 'must be "created", "dispatched", "received", or "cancelled"' },
+  notes: v => true
+}
+
+const SAMPLE_ROW = ['PROD-AMUL-500', 'VID-AMUL-500', 'WH-MAIN', 'MART-01', 'BATCH-2026-001', '50', 'dispatched', 'Bulk upload transfer']
+
+const downloadCSVTemplate = () => {
+  const comments = [
+    '# Stock Transfers Bulk Upload — CSV Template',
+    '# status: created | dispatched | received | cancelled (defaults to created)',
+    '',
+  ]
+  const blob = new Blob([[...comments, SCHEMA_FIELDS.join(','), SAMPLE_ROW.join(',')].join('\n')], { type: 'text/csv' })
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob); a.download = 'stock_transfers_template.csv'; a.click()
+  URL.revokeObjectURL(a.href)
+}
+
+const downloadXLSXTemplate = () => {
+  const ws = XLSX.utils.aoa_to_sheet([SCHEMA_FIELDS, SAMPLE_ROW])
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, 'Stock Transfers')
+  XLSX.writeFile(wb, 'stock_transfers_template.xlsx')
+}
 
 export default function StockTransfers() {
   const dispatch = useDispatch()
@@ -39,6 +79,7 @@ export default function StockTransfers() {
   // Dialog configurations
   const [createOpen, setCreateOpen] = useState(false)
   const [receiveOpen, setReceiveOpen] = useState(false)
+  const [bulkOpen, setBulkOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
 
   const [selectedTransfer, setSelectedTransfer] = useState(null)
@@ -51,13 +92,68 @@ export default function StockTransfers() {
     martId: '',
     productId: '',
     variantId: '',
+    batchId: '',
     qtyDispatched: '',
     notes: ''
   })
 
-  // Algolia product/variant selection state (replaces uniqueInventoryProducts local search)
+  // Algolia product selection state
+  // After product is selected via Algolia, we fetch real warehouse inventory
+  // to get correct variant UUIDs + actual available stock quantities
   const [selectedProductLabel, setSelectedProductLabel] = useState('')
-  const [selectedProductVariants, setSelectedProductVariants] = useState([])
+  const [selectedProductVariants, setSelectedProductVariants] = useState([]) // from warehouse inventory API
+  const [variantLoadingForProduct, setVariantLoadingForProduct] = useState(false)
+
+  // Batch selection state
+  const [selectedVariantBatches, setSelectedVariantBatches] = useState([])
+  const [batchesLoading, setBatchesLoading] = useState(false)
+
+  // Fetches batches for a specific variant in the selected warehouse
+  const fetchBatchesForVariant = async (variantId) => {
+    if (!selectedWarehouseId || !variantId) {
+      setSelectedVariantBatches([])
+      return
+    }
+    setBatchesLoading(true)
+    try {
+      const res = await api.get(
+        `/warehouse-inventory/warehouse/${selectedWarehouseId}/batches?variant_id=${variantId}&limit=200`
+      )
+      if (res.success) {
+        setSelectedVariantBatches(res.data || [])
+      } else {
+        setSelectedVariantBatches([])
+      }
+    } catch (err) {
+      console.error('[fetchBatchesForVariant]', err)
+      setSelectedVariantBatches([])
+    } finally {
+      setBatchesLoading(false)
+    }
+  }
+
+  // Fetches REAL warehouse inventory variants for a product (correct UUIDs + stock qty)
+  const fetchWarehouseVariantsForProduct = async (productId) => {
+    if (!selectedWarehouseId || !productId) return
+    setVariantLoadingForProduct(true)
+    try {
+      const res = await api.get(
+        `/warehouse-inventory/warehouse/${selectedWarehouseId}?product_id=${productId}&limit=200`
+      )
+      if (res.success) {
+        const rows = res.data || []
+        // Each row is a warehouse_inventory_summary row — has real variant_id UUID + available_qty
+        setSelectedProductVariants(rows)
+      } else {
+        setSelectedProductVariants([])
+      }
+    } catch (err) {
+      console.error('[fetchWarehouseVariants]', err)
+      setSelectedProductVariants([])
+    } finally {
+      setVariantLoadingForProduct(false)
+    }
+  }
 
   const [receiveForm, setReceiveForm] = useState({
     qtyReceived: ''
@@ -162,10 +258,28 @@ export default function StockTransfers() {
       dispatch(showToast({ message: 'Please select a catalog item to transfer', type: 'error' }))
       return
     }
+    if (!createForm.variantId) {
+      dispatch(showToast({ message: 'Please select a variant to transfer', type: 'error' }))
+      return
+    }
+    if (!createForm.batchId) {
+      dispatch(showToast({ message: 'Please select a source batch to transfer from', type: 'error' }))
+      return
+    }
     const qty = parseFloat(createForm.qtyDispatched)
     if (isNaN(qty) || qty <= 0) {
       dispatch(showToast({ message: 'Valid quantity to dispatch is required', type: 'error' }))
       return
+    }
+
+    // Check if the requested quantity exceeds the batch's available stock
+    const selectedBatch = selectedVariantBatches.find(b => b.batch_id === createForm.batchId)
+    if (selectedBatch) {
+      const avail = parseFloat(selectedBatch.qty_available) - parseFloat(selectedBatch.qty_reserved || 0)
+      if (qty > avail) {
+        dispatch(showToast({ message: `Requested quantity (${qty}) exceeds the selected batch's available stock (${avail})`, type: 'error' }))
+        return
+      }
     }
 
     setSubmitting(true)
@@ -175,15 +289,17 @@ export default function StockTransfers() {
         martId: createForm.martId,
         productId: createForm.productId,
         variantId: createForm.variantId,
+        batchId: createForm.batchId,
         qtyDispatched: qty,
         notes: createForm.notes
       })
       if (res.success) {
         dispatch(showToast({ message: 'Replenishment transfer created and stock reserved!', type: 'success' }))
         setCreateOpen(false)
-        setCreateForm({ martId: '', productId: '', variantId: '', qtyDispatched: '', notes: '' })
+        setCreateForm({ martId: '', productId: '', variantId: '', batchId: '', qtyDispatched: '', notes: '' })
         setSelectedProductLabel('')
         setSelectedProductVariants([])
+        setSelectedVariantBatches([])
         fetchTransfers()
         fetchWarehouseInventory()
       } else {
@@ -371,14 +487,20 @@ export default function StockTransfers() {
             🔄 Refresh
           </Button>
           {!isSuperAdmin && (
-            <Button variant="primary" onClick={() => {
-              setCreateForm({ martId: '', productId: '', variantId: '', qtyDispatched: '', notes: '' });
-              setSelectedProductLabel('');
-              setSelectedProductVariants([]);
-              setCreateOpen(true);
-            }}>
-              ➕ Create Stock Transfer
-            </Button>
+            <>
+              <Button variant="secondary" onClick={() => setBulkOpen(true)}>
+                📤 Bulk Import
+              </Button>
+              <Button variant="primary" onClick={() => {
+                setCreateForm({ martId: '', productId: '', variantId: '', batchId: '', qtyDispatched: '', notes: '' });
+                setSelectedProductLabel('');
+                setSelectedProductVariants([]);
+                setSelectedVariantBatches([]);
+                setCreateOpen(true);
+              }}>
+                ➕ Create Stock Transfer
+              </Button>
+            </>
           )}
         </div>
       </PageHeader>
@@ -485,15 +607,18 @@ export default function StockTransfers() {
             mode="product"
             label="Select Product *"
             value={selectedProductLabel}
-            placeholder="Search Algolia catalog by name or brand…"
-            onSelect={(prod) => {
-              setSelectedProductLabel(`${prod.productName} (${prod.brandName})`)
-              setSelectedProductVariants(prod.variants || [])
+            placeholder="Search catalog by name or brand…"
+            onSelect={async (prod) => {
+              const label = `${prod.productName} (${prod.brandName})`
+              setSelectedProductLabel(label)
+              setSelectedProductVariants([])
               setCreateForm(prev => ({
                 ...prev,
                 productId: prod.productId,
                 variantId: ''
               }))
+              // Fetch REAL warehouse variants for this product (correct UUIDs + stock)
+              await fetchWarehouseVariantsForProduct(prod.productId)
             }}
             onClear={() => {
               setSelectedProductLabel('')
@@ -502,28 +627,100 @@ export default function StockTransfers() {
             }}
           />
 
-          {selectedProductVariants.length > 0 && (
-            <div className="flex flex-col gap-1 mt-1">
-              <label className="text-xs font-bold text-slate-700 mb-1">Select Variant *</label>
-              <select
-                required
-                value={createForm.variantId}
-                onChange={e => setCreateForm(prev => ({ ...prev, variantId: e.target.value }))}
-                className="w-full text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-xl px-3 py-2.5 focus:border-indigo-500 focus:outline-none transition-colors"
-              >
-                <option value="">-- Choose Variant --</option>
-                {selectedProductVariants.map((v, i) => {
-                  const variantId = v.variant_id || v.variantId || v.sku
-                  const variantName = v.variant_name || v.variantName || v.sku || 'Default'
-                  const sku = v.sku || 'N/A'
-                  return (
-                    <option key={variantId || i} value={variantId}>
-                      {variantName} · SKU: {sku}
-                    </option>
-                  )
-                })}
-              </select>
+          {variantLoadingForProduct && (
+            <div className="flex items-center gap-2 py-2 text-xs text-slate-400">
+              <div className="w-3.5 h-3.5 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
+              Loading warehouse stock for this product…
             </div>
+          )}
+
+          {!variantLoadingForProduct && selectedProductVariants.length > 0 && (
+            <div className="flex flex-col gap-3 mt-1">
+              <div className="flex flex-col gap-1">
+                <label className="text-xs font-bold text-slate-700 mb-1">Select Variant *</label>
+                <select
+                  required
+                  value={createForm.variantId}
+                  onChange={e => {
+                    const variantId = e.target.value
+                    setCreateForm(prev => ({ ...prev, variantId, batchId: '' }))
+                    setSelectedVariantBatches([])
+                    fetchBatchesForVariant(variantId)
+                  }}
+                  className="w-full text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-xl px-3 py-2.5 focus:border-indigo-500 focus:outline-none transition-colors"
+                >
+                  <option value="">-- Choose Variant --</option>
+                  {selectedProductVariants.map((v, i) => {
+                    // Use the REAL warehouse inventory variant_id (PostgreSQL UUID)
+                    const variantId = v.variant_id
+                    const variantName = v.variant_name || v.variantName || v.sku || 'Default'
+                    const sku = v.variant_sku || v.sku || 'N/A'
+                    const avail = parseFloat(v.available_qty ?? v.qty_available ?? 0)
+                    const rack = v.asl || v.ASL || '—'
+                    const isOutOfStock = avail <= 0
+                    return (
+                      <option key={variantId || i} value={variantId} disabled={isOutOfStock}>
+                        {variantName} · SKU: {sku} · {isOutOfStock ? '❌ Out of stock' : `✅ ${avail.toLocaleString()} pcs`} · Rack: {rack}
+                      </option>
+                    )
+                  })}
+                </select>
+                {/* Selected variant available qty hint */}
+                {createForm.variantId && (() => {
+                  const sel = selectedProductVariants.find(v => v.variant_id === createForm.variantId)
+                  const avail = parseFloat(sel?.available_qty ?? sel?.qty_available ?? 0)
+                  return sel ? (
+                    <p className="text-[11px] font-bold text-emerald-600 mt-0.5">
+                      ✅ {avail.toLocaleString()} pcs available in warehouse for this variant
+                    </p>
+                  ) : null
+                })()}
+              </div>
+
+              {/* Batch selection dropdown */}
+              {createForm.variantId && (
+                <div className="flex flex-col gap-1">
+                  <label className="text-xs font-bold text-slate-700 mb-1">Select Source Batch *</label>
+                  {batchesLoading ? (
+                    <div className="flex items-center gap-2 py-2 text-xs text-slate-400">
+                      <div className="w-3.5 h-3.5 border-2 border-indigo-400 border-t-transparent rounded-full animate-spin" />
+                      Loading batches...
+                    </div>
+                  ) : selectedVariantBatches.length > 0 ? (
+                    <select
+                      required
+                      value={createForm.batchId}
+                      onChange={e => setCreateForm(prev => ({ ...prev, batchId: e.target.value }))}
+                      className="w-full text-xs font-medium text-slate-700 bg-white border border-slate-200 rounded-xl px-3 py-2.5 focus:border-indigo-500 focus:outline-none transition-colors"
+                    >
+                      <option value="">-- Choose Batch --</option>
+                      {selectedVariantBatches.map((b) => {
+                        const batchId = b.batch_id
+                        const batchNo = b.batch_number
+                        const expiry = formatDateDisplay(b.expiry_date)
+                        const avail = parseFloat(b.qty_available) - parseFloat(b.qty_reserved || 0)
+                        const isOutOfStock = avail <= 0
+                        return (
+                          <option key={batchId} value={batchId} disabled={isOutOfStock}>
+                            {batchNo} · Exp: {expiry} · {isOutOfStock ? '❌ No available stock' : `✅ ${avail.toLocaleString()} pcs available`}
+                          </option>
+                        )
+                      })}
+                    </select>
+                  ) : (
+                    <p className="text-xs text-amber-600 font-semibold bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                      ⚠️ No active batches found with stock for this variant.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {!variantLoadingForProduct && createForm.productId && selectedProductVariants.length === 0 && (
+            <p className="text-xs text-amber-600 font-semibold bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              ⚠️ No warehouse stock found for this product. Add stock via Purchase Orders first.
+            </p>
           )}
 
           <Input
@@ -580,6 +777,29 @@ export default function StockTransfers() {
           </div>
         )}
       </Modal>
+
+      <BulkUploadModal
+        open={bulkOpen}
+        onClose={() => setBulkOpen(false)}
+        title="Bulk Upload Stock Transfers"
+        schemaFields={SCHEMA_FIELDS}
+        fieldValidators={FIELD_VALIDATORS}
+        onUpload={async (_, file) => {
+          const formData = new FormData()
+          formData.append('file', file)
+          formData.append('staff_id', user?.userId || user?.staff_id)
+          const res = await api.post('/warehouse-transfers/bulk', formData)
+          return res
+        }}
+        downloadCSVTemplate={downloadCSVTemplate}
+        downloadXLSXTemplate={downloadXLSXTemplate}
+        onDone={(e) => {
+          if (e) { e.preventDefault(); e.stopPropagation() }
+          setBulkOpen(false)
+          fetchTransfers()
+          fetchWarehouseInventory()
+        }}
+      />
     </div>
   )
 }
