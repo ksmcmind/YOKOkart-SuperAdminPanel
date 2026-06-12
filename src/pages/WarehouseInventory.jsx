@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
-import { 
-  fetchWarehouses, 
-  fetchWarehouseInventorySummary, 
-  fetchWarehouseInventoryRows, 
-  fetchWarehouseBatches, 
-  addWarehouseStock, 
+import {
+  fetchWarehouses,
+  fetchWarehouseInventorySummary,
+  fetchWarehouseInventoryRows,
+  fetchWarehouseBatches,
+  addWarehouseStock,
   adjustWarehouseStock,
   bulkUploadWarehouseInventory,
   fetchSuppliers,
@@ -26,6 +26,7 @@ import {
   selectAllWarehouses
 } from '../store/slices/warehouseSlice'
 import { fetchProducts } from '../store/slices/productSlice'
+import api from '../api/index'
 import { showToast } from '../store/slices/uiSlice'
 import PageHeader from '../components/PageHeader'
 import Button from '../components/Button'
@@ -36,7 +37,6 @@ import Input, { Select, Textarea } from '../components/Input'
 import BulkUploadModal from '../components/BulkUploadModal'
 import StatCard from '../components/StatCard'
 import AutocompleteVariantSelect from '../components/AutocompleteVariantSelect'
-import AlgoliaProductSearch from '../components/AlgoliaProductSearch'
 
 const SCHEMA_FIELDS = [
   'product_code',
@@ -222,6 +222,79 @@ export default function WarehouseInventory() {
   // Base State
   const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
+  const [selectedProductId, setSelectedProductId] = useState('')
+  const [inputValue, setInputValue] = useState('')
+  const [suggestions, setSuggestions] = useState([])
+  const [suggestLoading, setSuggestLoading] = useState(false)
+  const [showSuggest, setShowSuggest] = useState(false)
+  const suggestRef = useRef(null)
+
+  const handleSearch = async (q, productId = '') => {
+    let finalProductId = productId
+    if (q && q.trim() && !productId) {
+      // Option A: Resolve text query by calling autocomplete API to find the top suggestion's ID
+      try {
+        const res = await api.get(`/products/autocomplete?q=${encodeURIComponent(q.trim())}`)
+        if (res.success && res.data?.suggestions?.length > 0) {
+          const topSuggest = res.data.suggestions[0]
+          finalProductId = topSuggest.product_id || ''
+          setInputValue(topSuggest.name)
+          q = topSuggest.name
+        }
+      } catch (err) {
+        console.error('[Resolve search ID] Failed:', err)
+      }
+    }
+    setSelectedProductId(finalProductId)
+    setSearch(q)
+    setShowSuggest(false)
+  }
+
+  const handleSelectSuggest = (s) => {
+    const term = s.name
+    setInputValue(term)
+    handleSearch(term, s.product_id)
+  }
+
+  // Debounced autocomplete suggestions on typing
+  useEffect(() => {
+    const q = inputValue.trim()
+    if (!q || q.length < 2 || q === search.trim()) {
+      setSuggestions([])
+      if (q === search.trim()) {
+        setShowSuggest(false)
+      }
+      return
+    }
+
+    const timer = setTimeout(async () => {
+      setSuggestLoading(true)
+      try {
+        const res = await api.get(`/products/autocomplete?q=${encodeURIComponent(q)}`)
+        if (res.success) {
+          setSuggestions(res.data?.suggestions || [])
+          setShowSuggest(true)
+        }
+      } catch (err) {
+        console.error('[Autocomplete] Failed:', err)
+      } finally {
+        setSuggestLoading(false)
+      }
+    }, 450)
+
+    return () => clearTimeout(timer)
+  }, [inputValue, search])
+
+  // Close suggestions on click outside
+  useEffect(() => {
+    const clickOut = (e) => {
+      if (suggestRef.current && !suggestRef.current.contains(e.target)) {
+        setShowSuggest(false)
+      }
+    }
+    document.addEventListener('mousedown', clickOut)
+    return () => document.removeEventListener('mousedown', clickOut)
+  }, [])
 
   // Catalog Products (only loaded once for single restock variant selector lookup)
   const [catalogProducts, setCatalogProducts] = useState([])
@@ -322,7 +395,7 @@ export default function WarehouseInventory() {
   const fetchInventory = async (forceRefresh = false) => {
     if (!selectedWarehouseId) return
 
-    const cacheKey = `${selectedWarehouseId}_p${summaryPage}_l${summaryLimit}_f${summaryFilter}_s${search}`
+    const cacheKey = `${selectedWarehouseId}_p${summaryPage}_l${summaryLimit}_f${summaryFilter}_s${search}_pid${selectedProductId}`
     const cached = summaryCacheRef.current[cacheKey]
     const now = Date.now()
 
@@ -339,7 +412,8 @@ export default function WarehouseInventory() {
         page: summaryPage,
         limit: summaryLimit,
         filter: summaryFilter,
-        search
+        search,
+        productId: selectedProductId
       })).unwrap()
 
       const data = res.data || []
@@ -371,7 +445,8 @@ export default function WarehouseInventory() {
         limit: batchesLimit,
         expiring_soon: batchFilter === 'expiring_soon',
         expired_only: batchFilter === 'expired',
-        search
+        search,
+        productId: selectedProductId
       })).unwrap()
 
       setBatches(res.data || [])
@@ -399,7 +474,7 @@ export default function WarehouseInventory() {
     } else if (activeTab === 'batches') {
       fetchBatches()
     }
-  }, [selectedWarehouseId, activeTab, batchesPage, batchesLimit, summaryPage, summaryLimit])
+  }, [selectedWarehouseId, activeTab, batchesPage, batchesLimit, summaryPage, summaryLimit, selectedProductId])
 
   const invalidateSummaryCacheAndRefresh = useCallback(() => {
     summaryCacheRef.current = {}
@@ -410,32 +485,26 @@ export default function WarehouseInventory() {
     refreshActiveTabData()
   }, [refreshActiveTabData])
 
-  // Debounced search/filter trigger for summary tab
+  // Search/filter trigger for summary tab
   useEffect(() => {
     if (activeTab !== 'summary') return
-    const delayDebounce = setTimeout(() => {
-      fetchInventory(false)
-    }, 400)
-    return () => clearTimeout(delayDebounce)
-  }, [search, activeTab, summaryFilter])
+    fetchInventory(false)
+  }, [search, selectedProductId, activeTab, summaryFilter])
 
-  // Debounced search/filter trigger for batches tab
+  // Search/filter trigger for batches tab
   useEffect(() => {
     if (activeTab !== 'batches') return
-    const delayDebounce = setTimeout(() => {
-      fetchBatches()
-    }, 400)
-    return () => clearTimeout(delayDebounce)
-  }, [search, activeTab, batchFilter])
+    fetchBatches()
+  }, [search, selectedProductId, activeTab, batchFilter])
 
   // Reset pagination indexes on filters change
   useEffect(() => {
     setSummaryPage(1)
-  }, [search, summaryFilter])
+  }, [search, selectedProductId, summaryFilter])
 
   useEffect(() => {
     setBatchesPage(1)
-  }, [search, batchFilter])
+  }, [search, selectedProductId, batchFilter])
 
   // ── CSV Template Downloads ──────────────────────────────────────────────────
   const downloadCSVTemplate = () => {
@@ -1070,16 +1139,80 @@ export default function WarehouseInventory() {
         <div className="bg-white border border-slate-100 rounded-2xl px-4 py-3 shadow-sm">
           <div className="flex flex-col lg:flex-row gap-3 items-center">
             {/* Search */}
-            <div className="flex-1 flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 hover:border-primary-300 hover:bg-white transition-all duration-200">
-              <span className="text-slate-400 text-sm">🔍</span>
-              <input
-                type="text"
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                placeholder="Search product, SKU, batch, brand..."
-                className="w-full text-sm outline-none bg-transparent font-medium text-slate-700 placeholder-slate-400"
-              />
-              {search && <button onClick={() => setSearch('')} className="text-xs text-slate-400 hover:text-rose-500 font-bold shrink-0">✕</button>}
+            <div className="relative flex-1 flex gap-2" ref={suggestRef}>
+              <div className="flex-1 flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 hover:border-primary-300 hover:bg-white transition-all duration-200">
+                <span className="text-slate-400 text-sm">🔍</span>
+                <input
+                  type="text"
+                  value={inputValue}
+                  onChange={e => {
+                    setInputValue(e.target.value)
+                    setShowSuggest(true)
+                  }}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') {
+                      handleSearch(inputValue)
+                    }
+                  }}
+                  onFocus={() => suggestions.length > 0 && setShowSuggest(true)}
+                  placeholder="Search product, SKU, batch, brand..."
+                  className="w-full text-sm outline-none bg-transparent font-medium text-slate-700 placeholder-slate-400"
+                />
+                {suggestLoading && (
+                  <div className="w-3.5 h-3.5 border-2 border-primary-500 border-t-transparent rounded-full animate-spin shrink-0"></div>
+                )}
+                {inputValue && (
+                  <button
+                    onClick={() => {
+                      setInputValue('')
+                      handleSearch('')
+                    }}
+                    className="text-xs text-slate-400 hover:text-rose-500 font-bold shrink-0"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => handleSearch(inputValue)}
+                loading={loading}
+                className="py-2.5 px-4 rounded-xl font-bold shrink-0 shadow-sm whitespace-nowrap"
+              >
+                Search
+              </Button>
+
+              {/* Autocomplete Dropdown */}
+              {showSuggest && inputValue?.length >= 2 && (
+                <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white border border-gray-100 rounded-xl shadow-xl max-h-60 overflow-y-auto">
+                  {suggestions.length > 0 ? (
+                    suggestions.map((s, i) => (
+                      <button
+                        key={i}
+                        onMouseDown={e => {
+                          e.preventDefault()
+                          handleSelectSuggest(s)
+                        }}
+                        className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-primary-50 border-b border-gray-50 last:border-none flex items-center justify-between transition-colors"
+                      >
+                        <div className="flex items-center gap-3">
+                          <span className="text-sm">{s.is_brand ? '🏷️' : '🔍'}</span>
+                          <span className="font-semibold truncate max-w-[150px] sm:max-w-[200px]">{s.name}</span>
+                        </div>
+                        {s.is_brand ? (
+                          <span className="text-[9px] font-extrabold text-primary-600 bg-primary-50 px-2 py-0.5 rounded-full uppercase tracking-wider">Brand</span>
+                        ) : s.brand && (
+                          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{s.brand}</span>
+                        )}
+                      </button>
+                    ))
+                  ) : !suggestLoading ? (
+                    <div className="px-4 py-3 text-xs text-gray-400 italic">No products matched search</div>
+                  ) : null}
+                </div>
+              )}
             </div>
 
             {/* Summary Filter Pills */}
@@ -1164,21 +1297,17 @@ export default function WarehouseInventory() {
                   </thead>
                   <tbody>
                     {displayedBatches.map((row, i) => {
+                      const expiring = row.expiry_date && new Date(row.expiry_date) <= new Date(Date.now() + 60 * 24 * 60 * 60 * 1000);
                       const expired = row.is_expired || (row.expiry_date && new Date(row.expiry_date) < new Date());
-                      const expiring = !expired && row.expiry_date && new Date(row.expiry_date) <= new Date(Date.now() + 60 * 24 * 60 * 60 * 1000);
-                      const isLow = !expired && !expiring && parseFloat(row.qty_available || 0) <= parseFloat(row.reorder_level || 10);
                       return (
                         <tr
                           key={row.batch_id || i}
-                          className={`border-b border-slate-50 transition-all ${
-                            expired
-                              ? 'bg-red-900 text-white font-semibold border-l-4 border-red-600'
-                              : expiring
-                                ? 'bg-orange-50 text-orange-950 border-l-4 border-orange-500 font-medium'
-                                : isLow
-                                  ? 'bg-red-50 text-red-900 border-l-4 border-red-500 font-semibold'
-                                  : 'hover:bg-slate-50/60'
-                          }`}
+                          className={`border-b border-slate-50 transition-all ${expired
+                            ? 'bg-rose-100/75 text-rose-950 font-medium border-l-4 border-rose-600'
+                            : expiring
+                              ? 'bg-rose-50/60 text-rose-900 border-l-4 border-rose-400'
+                              : 'hover:bg-slate-50/60'
+                            }`}
                         >
                           {batchColumns.map(col => (
                             <td key={col.key} className="px-4 py-3 text-slate-700 whitespace-nowrap">
@@ -1224,21 +1353,14 @@ export default function WarehouseInventory() {
                   </thead>
                   <tbody>
                     {paginatedSummaryData.map((row, i) => {
-                      const expired = row.nearest_expiry && new Date(row.nearest_expiry) < new Date();
-                      const expiring = !expired && isExpiringSoon(row.nearest_expiry);
-                      const isLow = parseFloat(row.available_qty) <= parseFloat(row.reorder_level);
+                      const expiring = isExpiringSoon(row.nearest_expiry);
                       return (
                         <tr
                           key={row.variant_id || i}
-                          className={`border-b border-slate-50 transition-all ${
-                            expired
-                              ? 'bg-red-900 text-white font-semibold border-l-4 border-red-600'
-                              : expiring
-                                ? 'bg-orange-50 text-orange-950 border-l-4 border-orange-500 font-medium'
-                                : isLow
-                                  ? 'bg-red-50 text-red-900 border-l-4 border-red-500 font-semibold'
-                                  : 'hover:bg-slate-50/60'
-                          }`}
+                          className={`border-b border-slate-50 transition-all ${expiring
+                            ? 'bg-rose-50/60 text-rose-900 border-l-4 border-rose-400 font-medium'
+                            : 'hover:bg-slate-50/60'
+                            }`}
                         >
                           {summaryColumns.map(col => (
                             <td key={col.key} className="px-4 py-3 text-slate-700 whitespace-nowrap">
@@ -1386,22 +1508,20 @@ export default function WarehouseInventory() {
             <h4 className="text-[10px] font-black text-indigo-600 uppercase tracking-widest flex items-center gap-2">
               <span className="w-1.5 h-3 bg-indigo-600 rounded-full" />Catalog Product Reference
             </h4>
-          <div className="form-group">
-              <AlgoliaProductSearch
-                mode="variant"
-                label="Search Catalog Variant *"
-                value={restockForm.variantLabel}
-                placeholder="Search by brand, product name, or SKU…"
-                onSelect={(v) => {
+            <div className="form-group">
+              <label className="label block mb-1">Search Catalog Variant *</label>
+              <AutocompleteVariantSelect
+                value={restockForm.variantId}
+                displayLabel={restockForm.variantLabel}
+                onChange={(variantId, displayLabel, v) => {
                   setRestockForm(prev => ({
                     ...prev,
                     productId: v.productId,
-                    variantId: v.variantId,
+                    variantId: variantId,
                     stockUnit: v.stockUnit || 'pcs',
-                    variantLabel: v.displayLabel
+                    variantLabel: displayLabel
                   }));
                 }}
-                onClear={() => setRestockForm(prev => ({ ...prev, productId: '', variantId: '', variantLabel: '' }))}
               />
             </div>
           </div>

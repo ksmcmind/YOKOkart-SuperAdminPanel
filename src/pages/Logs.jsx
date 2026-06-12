@@ -6,6 +6,7 @@ import PageHeader from '../components/PageHeader'
 import Button from '../components/Button'
 import Table from '../components/Table'
 import Badge from '../components/Badge'
+import api from '../api/index'
 import {
   fetchBatchMovements,
   fetchStockTransfers,
@@ -19,6 +20,8 @@ const TABS = [
   { id: 'movements', label: 'Warehouse Batch Movements', icon: '🔄' },
   { id: 'transfers', label: 'Stock Transfers Log', icon: '🚚' },
   { id: 'receipts', label: 'Goods Receipts Log', icon: '🧾' },
+  { id: 'supplier-returns', label: 'Supplier Returns Log', icon: '↩️' },
+  { id: 'mart-returns', label: 'Mart Returns Log', icon: '🔙' },
 ]
 
 const TRANSACTION_TYPES = [
@@ -35,6 +38,22 @@ const TRANSFER_STATUSES = [
   { value: 'created', label: 'Created' },
   { value: 'dispatched', label: 'Dispatched' },
   { value: 'received', label: 'Received' },
+  { value: 'cancelled', label: 'Cancelled' },
+]
+
+const SUPPLIER_RETURN_STATUSES = [
+  { value: '', label: 'All Statuses' },
+  { value: 'created', label: 'Awaiting Dispatch' },
+  { value: 'dispatched', label: 'Dispatched' },
+  { value: 'confirmed', label: 'Confirmed by Supplier' },
+  { value: 'cancelled', label: 'Cancelled' },
+]
+
+const MART_RETURN_STATUSES = [
+  { value: '', label: 'All Statuses' },
+  { value: 'requested', label: 'Requested' },
+  { value: 'accepted', label: 'Accepted by WH' },
+  { value: 'rejected', label: 'Rejected' },
   { value: 'cancelled', label: 'Cancelled' },
 ]
 
@@ -97,11 +116,24 @@ export default function Logs() {
   const transfersState = useSelector(selectStockTransfers)
   const receiptsState = useSelector(selectGoodsReceipts)
 
+  // Local Return States
+  const [supplierReturns, setSupplierReturns] = useState([])
+  const [martReturns, setMartReturns] = useState([])
+  const [localPagination, setLocalPagination] = useState(null)
+  const [localLoading, setLocalLoading] = useState(false)
+
   const { list: logs, loading, pagination, error } = activeTab === 'movements'
     ? movementsState
     : activeTab === 'transfers'
       ? transfersState
-      : receiptsState
+      : activeTab === 'receipts'
+        ? receiptsState
+        : {
+            list: activeTab === 'supplier-returns' ? supplierReturns : martReturns,
+            loading: localLoading,
+            pagination: localPagination,
+            error: null
+          }
 
   // Filters State
   const [search, setSearch] = useState('')
@@ -127,6 +159,48 @@ export default function Logs() {
       dispatch(fetchStockTransfers(params))
     } else if (activeTab === 'receipts') {
       dispatch(fetchGoodsReceipts(params))
+    } else if (activeTab === 'supplier-returns') {
+      setLocalLoading(true)
+      try {
+        const queryParams = new URLSearchParams()
+        if (search.trim()) queryParams.append('search', search.trim())
+        if (status) queryParams.append('status', status)
+        const res = await api.get(`/supplier-returns?${queryParams.toString()}`)
+        if (res.success) {
+          setSupplierReturns(res.data || [])
+          setLocalPagination({
+            page: 1,
+            total: (res.data || []).length,
+            limit: 10000,
+            total_pages: 1
+          })
+        }
+      } catch (err) {
+        console.error(err)
+      } finally {
+        setLocalLoading(false)
+      }
+    } else if (activeTab === 'mart-returns') {
+      setLocalLoading(true)
+      try {
+        const queryParams = new URLSearchParams()
+        if (search.trim()) queryParams.append('search', search.trim())
+        if (status) queryParams.append('status', status)
+        const res = await api.get(`/mart-returns?${queryParams.toString()}`)
+        if (res.success) {
+          setMartReturns(res.data || [])
+          setLocalPagination({
+            page: 1,
+            total: (res.data || []).length,
+            limit: 10000,
+            total_pages: 1
+          })
+        }
+      } catch (err) {
+        console.error(err)
+      } finally {
+        setLocalLoading(false)
+      }
     }
   }, [activeTab, page, limit, search, type, status, dispatch])
 
@@ -408,7 +482,160 @@ export default function Logs() {
     }
   ]
 
-  const activeColumns = activeTab === 'movements' ? movementColumns : (activeTab === 'transfers' ? transferColumns : receiptColumns)
+  const supplierReturnColumns = [
+    {
+      key: 'return_code',
+      label: 'Return Code',
+      render: r => <span className="bg-red-50 text-red-700 px-2 py-0.5 rounded font-mono text-[10px] font-bold border border-red-100">#SR-{r.return_code}</span>
+    },
+    {
+      key: 'created_at',
+      label: 'Timestamp',
+      render: r => <span className="text-xs text-gray-500 font-medium">{fmtDate(r.created_at)}</span>
+    },
+    {
+      key: 'warehouse_name',
+      label: 'Warehouse',
+      render: r => <span className="text-xs font-semibold text-gray-700">🏭 {r.warehouse_name}</span>
+    },
+    {
+      key: 'supplier_name',
+      label: 'Supplier',
+      render: r => <span className="text-xs text-gray-700">{r.supplier_name || '—'}</span>
+    },
+    {
+      key: 'product_name',
+      label: 'Product Details',
+      render: r => (
+        <div className="py-1">
+          <p className="font-bold text-gray-900 text-xs">{r.product_name}</p>
+          <p className="text-[10px] text-gray-500 font-mono mt-0.5">
+            SKU: {r.variant_sku} | Batch: <span className="font-bold text-gray-600">{r.batch_number}</span>
+          </p>
+        </div>
+      )
+    },
+    {
+      key: 'qty_returned',
+      label: 'Qty Returned',
+      render: r => <span className="text-xs text-rose-600 font-bold font-mono">-{parseFloat(r.qty_returned).toLocaleString()}</span>
+    },
+    {
+      key: 'total_credit',
+      label: 'Debit Value',
+      render: r => <span className="text-xs text-emerald-600 font-bold font-mono">₹{parseFloat(r.total_credit || 0).toFixed(2)}</span>
+    },
+    {
+      key: 'reason',
+      label: 'Reason',
+      render: r => {
+        let badgeCol = 'gray'
+        if (r.reason === 'expired') badgeCol = 'red'
+        if (r.reason === 'damage') badgeCol = 'yellow'
+        return <Badge variant={badgeCol} size="xs">{r.reason?.replace(/_/g, ' ').toUpperCase()}</Badge>
+      }
+    },
+    {
+      key: 'status',
+      label: 'Status',
+      render: r => {
+        const colors = {
+          created: 'yellow',
+          dispatched: 'blue',
+          confirmed: 'green',
+          cancelled: 'red'
+        }
+        return <Badge variant={colors[r.status] || 'gray'} size="xs">{r.status?.toUpperCase()}</Badge>
+      }
+    },
+    {
+      key: 'notes',
+      label: 'Notes',
+      render: r => <span className="text-xs text-gray-500 italic max-w-xs block truncate" title={r.notes}>{r.notes || '—'}</span>
+    }
+  ]
+
+  const martReturnColumns = [
+    {
+      key: 'return_code',
+      label: 'Return Code',
+      render: r => <span className="bg-rose-50 text-rose-700 px-2 py-0.5 rounded font-mono text-[10px] font-bold border border-rose-100">#MR-{r.return_code}</span>
+    },
+    {
+      key: 'created_at',
+      label: 'Timestamp',
+      render: r => <span className="text-xs text-gray-500 font-medium">{fmtDate(r.created_at)}</span>
+    },
+    {
+      key: 'mart_name',
+      label: 'Source Mart',
+      render: r => <span className="text-xs font-semibold text-primary-600">🏬 {r.mart_name}</span>
+    },
+    {
+      key: 'warehouse_name',
+      label: 'Target Warehouse',
+      render: r => <span className="text-xs font-semibold text-gray-700">🏭 {r.warehouse_name || '—'}</span>
+    },
+    {
+      key: 'product_name',
+      label: 'Product Details',
+      render: r => (
+        <div className="py-1">
+          <p className="font-bold text-gray-900 text-xs">{r.product_name}</p>
+          <p className="text-[10px] text-gray-500 font-mono mt-0.5">
+            SKU: {r.variant_sku} | Batch: <span className="font-bold text-gray-600">{r.batch_number}</span>
+          </p>
+        </div>
+      )
+    },
+    {
+      key: 'qty_returned',
+      label: 'Qty Returned',
+      render: r => <span className="text-xs text-rose-600 font-bold font-mono">-{parseFloat(r.qty_returned).toLocaleString()}</span>
+    },
+    {
+      key: 'reason',
+      label: 'Reason',
+      render: r => {
+        let badgeCol = 'gray'
+        if (r.reason === 'expired') badgeCol = 'red'
+        if (r.reason === 'damage') badgeCol = 'yellow'
+        return <Badge variant={badgeCol} size="xs">{r.reason?.replace(/_/g, ' ').toUpperCase()}</Badge>
+      }
+    },
+    {
+      key: 'status',
+      label: 'Status',
+      render: r => {
+        const colors = {
+          requested: 'yellow',
+          accepted: 'green',
+          rejected: 'red',
+          cancelled: 'gray'
+        }
+        return <Badge variant={colors[r.status] || 'gray'} size="xs">{r.status?.toUpperCase()}</Badge>
+      }
+    },
+    {
+      key: 'notes',
+      label: 'Remarks',
+      render: r => (
+        <span className="text-xs text-gray-500 italic max-w-xs block truncate" title={r.status === 'rejected' ? `Rejection Reason: ${r.rejection_reason}` : r.notes}>
+          {r.status === 'rejected' ? `Rejection Reason: ${r.rejection_reason}` : (r.notes || '—')}
+        </span>
+      )
+    }
+  ]
+
+  const activeColumns = activeTab === 'movements'
+    ? movementColumns
+    : activeTab === 'transfers'
+      ? transferColumns
+      : activeTab === 'receipts'
+        ? receiptColumns
+        : activeTab === 'supplier-returns'
+          ? supplierReturnColumns
+          : martReturnColumns
 
   return (
     <div className="p-4 sm:p-6 space-y-6">
@@ -443,7 +670,13 @@ export default function Logs() {
           <input
             value={search}
             onChange={e => { setSearch(e.target.value); setPage(1); }}
-            placeholder={activeTab === 'movements' ? "Search Product, Batch, Warehouse..." : (activeTab === 'transfers' ? "Search Product, Warehouse, Mart, Ticket..." : "Search Product, Invoice, Supplier, Warehouse...")}
+            placeholder={
+              activeTab === 'movements' ? "Search Product, Batch, Warehouse..." : 
+              activeTab === 'transfers' ? "Search Product, Warehouse, Mart, Ticket..." : 
+              activeTab === 'receipts' ? "Search Product, Invoice, Supplier, Warehouse..." :
+              activeTab === 'supplier-returns' ? "Search Return #, Batch, Product, Supplier..." :
+              "Search Return #, Product, Mart..."
+            }
             className="w-full text-xs pl-9 pr-3 py-2.5 border border-gray-200 rounded-xl focus:ring-4 focus:ring-green-500/10 focus:border-green-500 focus:outline-none transition-all bg-gray-50 focus:bg-white placeholder-gray-400"
           />
         </div>
@@ -467,6 +700,30 @@ export default function Logs() {
             className="text-xs border border-gray-200 rounded-xl px-3 py-2.5 bg-gray-50 outline-none focus:border-green-500 min-w-[160px] font-medium"
           >
             {TRANSFER_STATUSES.map(s => (
+              <option key={s.value} value={s.value}>{s.label}</option>
+            ))}
+          </select>
+        )}
+
+        {activeTab === 'supplier-returns' && (
+          <select
+            value={status}
+            onChange={e => { setStatus(e.target.value); setPage(1); }}
+            className="text-xs border border-gray-200 rounded-xl px-3 py-2.5 bg-gray-50 outline-none focus:border-green-500 min-w-[160px] font-medium"
+          >
+            {SUPPLIER_RETURN_STATUSES.map(s => (
+              <option key={s.value} value={s.value}>{s.label}</option>
+            ))}
+          </select>
+        )}
+
+        {activeTab === 'mart-returns' && (
+          <select
+            value={status}
+            onChange={e => { setStatus(e.target.value); setPage(1); }}
+            className="text-xs border border-gray-200 rounded-xl px-3 py-2.5 bg-gray-50 outline-none focus:border-green-500 min-w-[160px] font-medium"
+          >
+            {MART_RETURN_STATUSES.map(s => (
               <option key={s.value} value={s.value}>{s.label}</option>
             ))}
           </select>

@@ -1,5 +1,5 @@
 // src/pages/StockTransfers.jsx
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import * as XLSX from 'xlsx'
 import api from '../api/index'
@@ -86,6 +86,64 @@ export default function StockTransfers() {
 
   // Filter state
   const [statusFilter, setStatusFilter] = useState('all')
+
+  const [inputValue, setInputValue] = useState('')
+  const [search, setSearch] = useState('')
+  const [suggestions, setSuggestions] = useState([])
+  const [suggestLoading, setSuggestLoading] = useState(false)
+  const [showSuggest, setShowSuggest] = useState(false)
+  const suggestRef = useRef(null)
+
+  // Debounced search autocomplete
+  useEffect(() => {
+    const q = inputValue?.trim()
+    if (!q || q.length < 2 || q === search.trim()) {
+      setSuggestions([])
+      if (q === search.trim()) {
+        setShowSuggest(false)
+      }
+      return
+    }
+
+    const timer = setTimeout(async () => {
+      setSuggestLoading(true)
+      try {
+        const res = await api.get(`/products/autocomplete?q=${encodeURIComponent(q)}`)
+        if (res.success) {
+          setSuggestions(res.data?.suggestions || [])
+          setShowSuggest(true)
+        }
+      } catch (err) {
+        console.error('[Autocomplete] Failed:', err)
+      } finally {
+        setSuggestLoading(false)
+      }
+    }, 450)
+
+    return () => clearTimeout(timer)
+  }, [inputValue, search])
+
+  // Close suggestions on click outside
+  useEffect(() => {
+    const clickOut = (e) => {
+      if (suggestRef.current && !suggestRef.current.contains(e.target)) {
+        setShowSuggest(false)
+      }
+    }
+    document.addEventListener('mousedown', clickOut)
+    return () => document.removeEventListener('mousedown', clickOut)
+  }, [])
+
+  const handleSearch = (q) => {
+    setSearch(q)
+    setShowSuggest(false)
+  }
+
+  const handleSelectSuggest = (s) => {
+    const term = s.name
+    setInputValue(term)
+    handleSearch(term)
+  }
 
   // Forms state
   const [createForm, setCreateForm] = useState({
@@ -231,11 +289,20 @@ export default function StockTransfers() {
     fetchWarehouseInventory()
   }, [selectedWarehouseId])
 
-  // Filter transfers list by status pill
+  // Filter transfers list by status pill and search query
   const filteredTransfers = useMemo(() => {
-    if (statusFilter === 'all') return transfers
-    return transfers.filter(t => t.status === statusFilter)
-  }, [transfers, statusFilter])
+    let result = transfers
+    if (statusFilter !== 'all') {
+      result = result.filter(t => t.status === statusFilter)
+    }
+    if (search) {
+      const q = search.toLowerCase().trim()
+      result = result.filter(t => 
+        [t.transfer_id, t.mart_name, t.productName || t.product_name || '', t.status, t.variant_sku || ''].some(v => String(v || '').toLowerCase().includes(q))
+      )
+    }
+    return result
+  }, [transfers, statusFilter, search])
 
   // Compute stat summary card counts
   const stats = useMemo(() => {
@@ -564,6 +631,87 @@ export default function StockTransfers() {
         ))}
       </div>
 
+      {/* Search Bar */}
+      <div className="bg-white border border-slate-100 rounded-2xl px-4 py-3 shadow-sm">
+        <div className="flex flex-col md:flex-row gap-3 items-center">
+          <div className="relative flex-1 flex gap-2 w-full" ref={suggestRef}>
+            <div className="flex-1 flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 hover:border-primary-300 hover:bg-white transition-all duration-200">
+              <span className="text-slate-400 text-sm">🔍</span>
+              <input
+                type="text"
+                value={inputValue}
+                onChange={e => {
+                  setInputValue(e.target.value)
+                  setShowSuggest(true)
+                }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    handleSearch(inputValue)
+                  }
+                }}
+                onFocus={() => suggestions.length > 0 && setShowSuggest(true)}
+                placeholder="Search transfers by target, product, status, SKU..."
+                className="w-full text-sm outline-none bg-transparent font-medium text-slate-700 placeholder-slate-400"
+              />
+              {suggestLoading && (
+                <div className="w-3.5 h-3.5 border-2 border-primary-500 border-t-transparent rounded-full animate-spin shrink-0"></div>
+              )}
+              {inputValue && (
+                <button
+                  onClick={() => {
+                    setInputValue('')
+                    handleSearch('')
+                  }}
+                  className="text-xs text-slate-400 hover:text-rose-500 font-bold shrink-0"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => handleSearch(inputValue)}
+              loading={loading}
+              className="py-2.5 px-4 rounded-xl font-bold shrink-0 shadow-sm whitespace-nowrap"
+            >
+              Search
+            </Button>
+
+            {/* Autocomplete Dropdown */}
+            {showSuggest && inputValue?.length >= 2 && (
+              <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white border border-gray-100 rounded-xl shadow-xl max-h-60 overflow-y-auto">
+                {suggestions.length > 0 ? (
+                  suggestions.map((s, i) => (
+                    <button
+                      key={i}
+                      onMouseDown={e => {
+                      e.preventDefault()
+                      handleSelectSuggest(s)
+                    }}
+                      className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-primary-50 border-b border-gray-50 last:border-none flex items-center justify-between transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm">{s.is_brand ? '🏷️' : '🔍'}</span>
+                        <span className="font-semibold truncate max-w-[150px] sm:max-w-[200px]">{s.name}</span>
+                      </div>
+                      {s.is_brand ? (
+                        <span className="text-[9px] font-extrabold text-primary-600 bg-primary-50 px-2 py-0.5 rounded-full uppercase tracking-wider">Brand</span>
+                      ) : s.brand && (
+                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{s.brand}</span>
+                      )}
+                    </button>
+                  ))
+                ) : !suggestLoading ? (
+                  <div className="px-4 py-3 text-xs text-gray-400 italic">No products matched search</div>
+                ) : null}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
       {/* Transfers Grid */}
       <Grid
         columns={transferColumns}
@@ -572,9 +720,7 @@ export default function StockTransfers() {
         emptyText="No stock transfer dispatches found."
         pagination={true}
         pageSize={15}
-        showSearch={true}
-        searchPlaceholder="Search transfers by target, product name, status..."
-        searchKey={(item, query) => [item.transfer_id, item.mart_name, item.productName || item.product_name, item.status].some(v => String(v || '').toLowerCase().includes(query))}
+        showSearch={false}
       />
 
       {/* Create Outbound Stock Transfer Modal */}

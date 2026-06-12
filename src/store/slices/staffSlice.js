@@ -54,10 +54,20 @@ export const toggleStaffStatus = createAsyncThunk(
   }
 )
 
+export const fetchStaffRoles = createAsyncThunk(
+  'staff/fetchRoles',
+  async (_, { rejectWithValue }) => {
+    const res = await api.get('/staff/roles')
+    if (!res.success) return rejectWithValue(res.message)
+    return res.data
+  }
+)
+
 const staffSlice = createSlice({
   name: 'staff',
   initialState: {
     list:    [],
+    roles:   [],
     loading: false,
     error:   null,
   },
@@ -89,10 +99,16 @@ const staffSlice = createSlice({
         const idx = state.list.findIndex(s => s.id === action.payload.id)
         if (idx !== -1) state.list[idx] = action.payload
       })
+
+    builder
+      .addCase(fetchStaffRoles.fulfilled, (state, action) => {
+        state.roles = action.payload || []
+      })
   },
 })
 
 export const selectAllStaff    = (state) => state.staff.list
+export const selectAllStaffRoles = (state) => state.staff.roles
 export const selectStaffLoading = (state) => state.staff.loading
 export const selectStaffError   = (state) => state.staff.error
 

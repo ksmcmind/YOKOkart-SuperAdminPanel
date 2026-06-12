@@ -42,6 +42,7 @@ import useMart from '../hooks/useMart'
 import MartSelector from '../components/MartSelector'
 import { fetchMarts } from '../store/slices/martSlice'
 import AlgoliaProductSearch from '../components/AlgoliaProductSearch'
+import api from '../api/index'
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -110,6 +111,7 @@ const EMPTY_RESTOCK_FORM = { stock_qty: '', mode: 'add', txn_type: 'restock', re
 // The FilterBar maintains its own draft internally.
 const EMPTY_FILTERS = {
     search: '',
+    product_id: '',
     stock_unit: '',
     is_active: '',
     low_stock_only: '',
@@ -213,28 +215,94 @@ function getActiveChips(f) {
 function FilterBar({ committedFilters, onSearch, onReset, loading, martId }) {
     const [draft, setDraft] = useState(committedFilters)
     const [expanded, setExpanded] = useState(false)
+    const [inputValue, setInputValue] = useState(committedFilters.search || '')
+    const [suggestions, setSuggestions] = useState([])
+    const [suggestLoading, setSuggestLoading] = useState(false)
+    const [showSuggest, setShowSuggest] = useState(false)
+    const suggestRef = useRef(null)
 
-    // Sync draft when parent resets
-    useEffect(() => { setDraft(committedFilters) }, [committedFilters])
-
-    // Debounced search on typing
+    // Sync draft and inputValue when parent resets
     useEffect(() => {
-        const timer = setTimeout(() => {
-            onSearch({ ...draft, page: 1 })
-        }, 300)
+        setDraft(committedFilters)
+        setInputValue(committedFilters.search || '')
+    }, [committedFilters])
+
+    // Debounced autocomplete suggestions on typing
+    useEffect(() => {
+        const q = inputValue.trim()
+        if (!q || q.length < 2 || q === (committedFilters.search || '').trim()) {
+            setSuggestions([])
+            if (q === (committedFilters.search || '').trim()) {
+                setShowSuggest(false)
+            }
+            return
+        }
+
+        const timer = setTimeout(async () => {
+            setSuggestLoading(true)
+            try {
+                const res = await api.get(`/products/autocomplete?q=${encodeURIComponent(q)}`)
+                if (res.success) {
+                    setSuggestions(res.data?.suggestions || [])
+                    setShowSuggest(true)
+                }
+            } catch (err) {
+                console.error('[Autocomplete] Failed:', err)
+            } finally {
+                setSuggestLoading(false)
+            }
+        }, 450)
+
         return () => clearTimeout(timer)
-    }, [draft.search])
+    }, [inputValue, committedFilters.search])
+
+    // Close suggestions on click outside
+    useEffect(() => {
+        const clickOut = (e) => {
+            if (suggestRef.current && !suggestRef.current.contains(e.target)) {
+                setShowSuggest(false)
+            }
+        }
+        document.addEventListener('mousedown', clickOut)
+        return () => document.removeEventListener('mousedown', clickOut)
+    }, [])
 
     const set = (k, v) => setDraft(f => ({ ...f, [k]: v }))
 
-    const commit = () => {
-        onSearch({ ...draft, page: 1 })
+    const commit = async () => {
+        let finalProductId = draft.product_id || ''
+        let q = inputValue
+        if (q && q.trim() && !finalProductId) {
+            // Option A: Resolve text query by calling autocomplete API to find top suggestion's ID
+            try {
+                const res = await api.get(`/products/autocomplete?q=${encodeURIComponent(q.trim())}`)
+                if (res.success && res.data?.suggestions?.length > 0) {
+                    const topSuggest = res.data.suggestions[0]
+                    finalProductId = topSuggest.product_id || ''
+                    setInputValue(topSuggest.name)
+                    q = topSuggest.name
+                }
+            } catch (err) {
+                console.error('[Resolve search ID] Failed:', err)
+            }
+        }
+        onSearch({ ...draft, search: q, product_id: finalProductId, page: 1 })
+        setShowSuggest(false)
     }
     const reset = () => {
         setDraft(EMPTY_FILTERS)
+        setInputValue('')
         onReset()
     }
     const onEnter = e => { if (e.key === 'Enter') commit() }
+
+    const handleSelectSuggest = (s) => {
+        const term = s.name
+        setInputValue(term)
+        setDraft(d => ({ ...d, product_id: s.product_id }))
+        onSearch({ ...draft, search: term, product_id: s.product_id, page: 1 })
+        setShowSuggest(false)
+    }
 
     const chips = getActiveChips(committedFilters) // from committed, not draft
     const statusVal = getStockStatusValue(draft)
@@ -249,21 +317,73 @@ function FilterBar({ committedFilters, onSearch, onReset, loading, martId }) {
     }))
 
     return (
-        <div className="bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
+        <div className="bg-white border border-gray-200 rounded-2xl shadow-sm">
 
             {/* Top bar */}
             <div className="flex gap-2 p-3">
-                <div className="relative flex-1 min-w-0">
+                <div className="relative flex-1 min-w-0" ref={suggestRef}>
                     <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                     </svg>
                     <input
-                        value={draft.search}
-                        onChange={e => set('search', e.target.value)}
+                        value={inputValue}
+                        onChange={e => {
+                            setInputValue(e.target.value)
+                            setDraft(d => ({ ...d, product_id: '' })) // Clear selected product ID if user types manually
+                            setShowSuggest(true)
+                        }}
                         onKeyDown={onEnter}
+                        onFocus={() => suggestions.length > 0 && setShowSuggest(true)}
                         placeholder="Search product, variant, batch, aisle…"
-                        className="w-full text-xs pl-8 pr-3 py-2.5 border border-gray-200 rounded-xl focus:ring-4 focus:ring-green-500/10 focus:border-green-500 focus:outline-none transition-all bg-gray-50 focus:bg-white placeholder-gray-400"
+                        className="w-full text-xs pl-8 pr-8 py-2.5 border border-gray-200 rounded-xl focus:ring-4 focus:ring-green-500/10 focus:border-green-500 focus:outline-none transition-all bg-gray-50 focus:bg-white placeholder-gray-400"
                     />
+                    {suggestLoading && (
+                        <div className="absolute right-8 top-1/2 -translate-y-1/2">
+                            <div className="w-3 h-3 border-2 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
+                        </div>
+                    )}
+                    {inputValue && (
+                        <button
+                            onClick={() => {
+                                setInputValue('')
+                                setDraft(d => ({ ...d, search: '', product_id: '' }))
+                                onSearch({ ...draft, search: '', product_id: '', page: 1 })
+                            }}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 hover:text-rose-500 font-bold"
+                        >
+                            ✕
+                        </button>
+                    )}
+
+                    {/* Autocomplete Dropdown */}
+                    {showSuggest && inputValue?.length >= 2 && (
+                        <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white border border-gray-100 rounded-xl shadow-xl max-h-60 overflow-y-auto">
+                            {suggestions.length > 0 ? (
+                                suggestions.map((s, i) => (
+                                    <button
+                                        key={i}
+                                        onMouseDown={e => {
+                                            e.preventDefault()
+                                            handleSelectSuggest(s)
+                                        }}
+                                        className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-primary-50 border-b border-gray-50 last:border-none flex items-center justify-between transition-colors"
+                                    >
+                                        <div className="flex items-center gap-3">
+                                            <span className="text-sm">{s.is_brand ? '🏷️' : '🔍'}</span>
+                                            <span className="font-semibold truncate max-w-[150px] sm:max-w-[200px]">{s.name}</span>
+                                        </div>
+                                        {s.is_brand ? (
+                                            <span className="text-[9px] font-extrabold text-primary-600 bg-primary-50 px-2 py-0.5 rounded-full uppercase tracking-wider">Brand</span>
+                                        ) : s.brand && (
+                                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{s.brand}</span>
+                                        )}
+                                    </button>
+                                ))
+                            ) : !suggestLoading ? (
+                                <div className="px-4 py-3 text-xs text-gray-400 italic">No products matched search</div>
+                            ) : null}
+                        </div>
+                    )}
                 </div>
 
                 {/* Sort — desktop */}

@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { useDispatch, useSelector } from 'react-redux'
 import {
-  fetchStaff, createStaff, updateStaff, toggleStaffStatus,
-  selectAllStaff, selectStaffLoading, selectStaffError, clearStaffError
+  fetchStaff, createStaff, updateStaff, toggleStaffStatus, fetchStaffRoles,
+  selectAllStaff, selectStaffLoading, selectStaffError, clearStaffError, selectAllStaffRoles
 } from '../store/slices/staffSlice'
 import { fetchMarts, selectAllMarts } from '../store/slices/martSlice'
 import { fetchWarehouses, selectAllWarehouses } from '../store/slices/warehouseSlice'
@@ -15,40 +15,8 @@ import Badge from '../components/Badge'
 import Input, { Select } from '../components/Input'
 import ImageUpload from '../components/ImageUpload'
 
-const ROLES = [
-  { value: 'super_admin', label: 'Super Admin' },
-  { value: 'admin', label: 'Admin' },
-  { value: 'mart_admin', label: 'Mart Admin' },
-  { value: 'manager', label: 'Manager' },
-  { value: 'cashier', label: 'Cashier' },
-  { value: 'packing_staff', label: 'Packing Staff' },
-  { value: 'accountant', label: 'Accountant' },
-  { value: 'support', label: 'Support' },
-  { value: 'warehouse_admin', label: 'Warehouse Admin' },
-  { value: 'warehouse_manager', label: 'Warehouse Manager' },
-  { value: 'dispatcher', label: 'Dispatcher' },
-  { value: 'stock_manager', label: 'Stock Manager' },
-  { value: 'inbound_staff', label: 'Inbound Staff' },
-  { value: 'outbound_staff', label: 'Outbound Staff' },
-  { value: 'inventory_auditor', label: 'Inventory Auditor' },
-  { value: 'returns_handler', label: 'Returns Handler' },
-]
-
-const WAREHOUSE_ROLES = [
-  'warehouse_admin',
-  'warehouse_manager',
-  'dispatcher',
-  'stock_manager',
-  'inbound_staff',
-  'outbound_staff',
-  'inventory_auditor',
-  'returns_handler'
-]
-
-const PLATFORM_ROLES = ['super_admin', 'admin']
-
 const EMPTY = {
-  name: '', phone: '', email: '', role: 'mart_admin',
+  name: '', phone: '', email: '', role: '',
   martId: '', warehouseId: '', basicSalary: '',
   profileImageFile: null, panImageFile: null, aadhaarImageFile: null,
 }
@@ -68,6 +36,22 @@ export default function Staff() {
   const error = useSelector(selectStaffError)
   const marts = useSelector(selectAllMarts)
   const warehouses = useSelector(selectAllWarehouses)
+  const rawRoles = useSelector(selectAllStaffRoles)
+
+  const roles = useMemo(() => {
+    return rawRoles.map(r => ({
+      value: r.role,
+      label: r.role?.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) || ''
+    }))
+  }, [rawRoles])
+
+  const warehouseRoles = useMemo(() => {
+    return rawRoles.filter(r => r.role_type === 'warehouse').map(r => r.role)
+  }, [rawRoles])
+
+  const platformRoles = useMemo(() => {
+    return rawRoles.filter(r => r.role_type === 'platform').map(r => r.role)
+  }, [rawRoles])
 
   const [open, setOpen] = useState(false)
   const [editingStaff, setEditingStaff] = useState(null)
@@ -82,7 +66,14 @@ export default function Staff() {
     dispatch(fetchMarts())
     dispatch(fetchStaff())
     dispatch(fetchWarehouses())
+    dispatch(fetchStaffRoles())
   }, [dispatch])
+
+  useEffect(() => {
+    if (roles.length > 0 && !form.role) {
+      setForm(f => ({ ...f, role: roles[0].value }))
+    }
+  }, [roles, form.role])
 
   useEffect(() => {
     if (error) {
@@ -95,6 +86,7 @@ export default function Staff() {
     dispatch(fetchStaff(true))
     dispatch(fetchMarts(true))
     dispatch(fetchWarehouses(true))
+    dispatch(fetchStaffRoles())
   }
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
@@ -118,11 +110,11 @@ export default function Staff() {
     if (!form.name || !form.phone) {
       dispatch(showToast({ message: 'Name and phone required', type: 'error' })); return
     }
-    if (WAREHOUSE_ROLES.includes(form.role)) {
+    if (warehouseRoles.includes(form.role)) {
       if (!form.warehouseId) {
         dispatch(showToast({ message: 'Warehouse is required for warehouse staff', type: 'error' })); return
       }
-    } else if (!PLATFORM_ROLES.includes(form.role) && !form.martId) {
+    } else if (!platformRoles.includes(form.role) && !form.martId) {
       dispatch(showToast({ message: 'Mart required for this role', type: 'error' })); return
     }
     // Mandatory images for new staff
@@ -143,8 +135,8 @@ export default function Staff() {
         phone: form.phone,
         email: form.email,
         role: form.role,
-        martId: (PLATFORM_ROLES.includes(form.role) || WAREHOUSE_ROLES.includes(form.role)) ? null : form.martId,
-        warehouseId: WAREHOUSE_ROLES.includes(form.role) ? form.warehouseId : null,
+        martId: (platformRoles.includes(form.role) || warehouseRoles.includes(form.role)) ? null : form.martId,
+        warehouseId: warehouseRoles.includes(form.role) ? form.warehouseId : null,
         basicSalary: parseFloat(form.basicSalary) || 0,
         ...(profileImage && { profileImage }),
         ...(panImage && { panImage }),
@@ -193,8 +185,8 @@ export default function Staff() {
     {
       key: 'facility', label: 'Facility',
       render: r => {
-        if (PLATFORM_ROLES.includes(r.role)) return <span className="text-[9px] bg-purple-50 text-purple-600 px-1.5 py-0.5 rounded font-black uppercase tracking-tighter border border-purple-100">{r.role?.replace(/_/g, ' ').toUpperCase()}</span>
-        if (WAREHOUSE_ROLES.includes(r.role)) {
+        if (platformRoles.includes(r.role)) return <span className="text-[9px] bg-purple-50 text-purple-600 px-1.5 py-0.5 rounded font-black uppercase tracking-tighter border border-purple-100">{r.role?.replace(/_/g, ' ').toUpperCase()}</span>
+        if (warehouseRoles.includes(r.role)) {
           const w = warehouses.find(w => w.warehouse_id === r.warehouseId)
           return <span className="text-[10px] text-primary-600 font-semibold uppercase tracking-tighter">🏭 {w?.name || 'Warehouse'}</span>
         }
@@ -256,7 +248,7 @@ export default function Staff() {
             <Button variant="secondary" onClick={handleRefreshData}>
               🔄 Refresh
             </Button>
-            <Button variant="primary" onClick={() => { setForm(EMPTY); setEditingStaff(null); setOpen(true) }}>
+            <Button variant="primary" onClick={() => { setForm({ ...EMPTY, role: roles[0]?.value || '' }); setEditingStaff(null); setOpen(true) }}>
               + Add Staff Member
             </Button>
           </div>
@@ -323,14 +315,14 @@ export default function Staff() {
             </h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Select label="System Role *" value={form.role} onChange={e => set('role', e.target.value)}>
-                {ROLES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
+                {roles.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
               </Select>
-              {WAREHOUSE_ROLES.includes(form.role) ? (
+              {warehouseRoles.includes(form.role) ? (
                 <Select label="Assign to Warehouse *" value={form.warehouseId} onChange={e => set('warehouseId', e.target.value)}>
                   <option value="">Select Warehouse</option>
                   {warehouses.map(w => <option key={w.warehouse_id} value={w.warehouse_id}>{w.name}</option>)}
                 </Select>
-              ) : !PLATFORM_ROLES.includes(form.role) ? (
+              ) : !platformRoles.includes(form.role) ? (
                 <Select label="Assign to Mart *" value={form.martId} onChange={e => set('martId', e.target.value)}>
                   <option value="">Select Mart</option>
                   {marts.map(m => (

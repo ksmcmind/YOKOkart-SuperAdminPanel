@@ -24,8 +24,10 @@ export default function Variants() {
   const [saving, setSaving] = useState(false)
 
   // Filters state
+  const [inputValue, setInputValue] = useState('')
   const [search, setSearch] = useState('')
   const [brand, setBrand] = useState('')
+  const [selectedProductId, setSelectedProductId] = useState('')
   const [showSuggest, setShowSuggest] = useState(false)
   const [suggestions, setSuggestions] = useState([])
   const [suggestLoading, setSuggestLoading] = useState(false)
@@ -42,12 +44,13 @@ export default function Variants() {
     details: []
   })
 
-  const loadVariants = async (targetPage = page, targetLimit = limit) => {
+  const loadVariants = async (targetPage = page, targetLimit = limit, targetSearch = search, targetProductId = selectedProductId) => {
     setLoading(true)
     try {
       const qParams = new URLSearchParams()
-      if (search) qParams.set('search', search)
+      if (targetSearch) qParams.set('search', targetSearch)
       if (brand) qParams.set('brand', brand)
+      if (targetProductId) qParams.set('productId', targetProductId)
       qParams.set('page', String(targetPage))
       qParams.set('limit', String(targetLimit))
 
@@ -70,9 +73,12 @@ export default function Variants() {
 
   // Debounced search autocomplete
   useEffect(() => {
-    const q = search?.trim()
-    if (!q || q.length < 2) {
+    const q = inputValue?.trim()
+    if (!q || q.length < 2 || q === search.trim()) {
       setSuggestions([])
+      if (q === search.trim()) {
+        setShowSuggest(false)
+      }
       return
     }
 
@@ -92,7 +98,7 @@ export default function Variants() {
     }, 450)
 
     return () => clearTimeout(timer)
-  }, [search])
+  }, [inputValue, search])
 
   // Close suggestions on click outside
   useEffect(() => {
@@ -105,17 +111,58 @@ export default function Variants() {
     return () => document.removeEventListener('mousedown', clickOut)
   }, [])
 
+  const handleSearchSubmit = async (q = inputValue) => {
+    let finalProductId = ''
+    let term = q
+    if (q && q.trim()) {
+      // Option A: Resolve text query by calling autocomplete API to find the top suggestion's ID
+      try {
+        const res = await api.get(`/products/autocomplete?q=${encodeURIComponent(q.trim())}`)
+        if (res.success && res.data?.suggestions?.length > 0) {
+          const topSuggest = res.data.suggestions[0]
+          if (topSuggest.is_brand) {
+            setBrand(topSuggest.brand || topSuggest.name)
+            setInputValue('')
+            setSearch('')
+            setSelectedProductId('')
+            setPage(1)
+            setTimeout(() => loadVariants(1, limit, '', ''), 50)
+            setShowSuggest(false)
+            return
+          } else {
+            finalProductId = topSuggest.product_id || ''
+            setInputValue(topSuggest.name)
+            term = topSuggest.name
+          }
+        }
+      } catch (err) {
+        console.error('[Resolve search ID] Failed:', err)
+      }
+    }
+    setSelectedProductId(finalProductId)
+    setSearch(term)
+    setPage(1)
+    setTimeout(() => loadVariants(1, limit, term, finalProductId), 50)
+    setShowSuggest(false)
+  }
+
   const handleSelectSuggest = (s) => {
     if (s.is_brand) {
-      setBrand(s.brand)
+      setBrand(s.brand || s.name)
+      setInputValue('')
       setSearch('')
+      setSelectedProductId('')
+      setPage(1)
+      setTimeout(() => loadVariants(1, limit, '', ''), 50)
     } else {
-      setSearch(s.name)
+      const term = s.name
+      setInputValue(term)
+      setSearch(term)
+      setSelectedProductId(s.product_id)
+      setPage(1)
+      setTimeout(() => loadVariants(1, limit, term, s.product_id), 50)
     }
     setShowSuggest(false)
-    setPage(1)
-    // slight delay to let state commit
-    setTimeout(() => loadVariants(1), 50)
   }
 
   const handleEdit = (v) => {
@@ -265,29 +312,50 @@ export default function Variants() {
           <input
             type="text"
             placeholder="Search variants by name, SKU, barcode..."
-            className="w-full pl-9 pr-4 py-2 bg-gray-50 border-none rounded-lg text-sm focus:ring-0 focus:outline-none transition-all"
-            value={search}
-            onChange={e => { setSearch(e.target.value); setShowSuggest(true) }}
-            onKeyDown={e => e.key === 'Enter' && (setPage(1), loadVariants(1), setShowSuggest(false))}
+            className="w-full pl-9 pr-8 py-2 bg-gray-50 border-none rounded-lg text-sm focus:ring-0 focus:outline-none transition-all"
+            value={inputValue}
+            onChange={e => { setInputValue(e.target.value); setShowSuggest(true) }}
+            onKeyDown={async e => {
+              if (e.key === 'Enter') {
+                await handleSearchSubmit(inputValue)
+              }
+            }}
             onFocus={() => suggestions.length > 0 && setShowSuggest(true)}
           />
           <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
           {suggestLoading && (
-            <div className="absolute right-3 top-1/2 -translate-y-1/2">
+            <div className="absolute right-8 top-1/2 -translate-y-1/2">
               <div className="w-3 h-3 border-2 border-primary-500 border-t-transparent rounded-full animate-spin"></div>
             </div>
           )}
+          {inputValue && (
+            <button
+              onClick={() => {
+                setInputValue('')
+                setSearch('')
+                setSelectedProductId('')
+                setPage(1)
+                loadVariants(1, limit, '', '')
+              }}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 hover:text-rose-500 font-bold"
+            >
+              ✕
+            </button>
+          )}
 
           {/* Autocomplete Dropdown */}
-          {showSuggest && search.length >= 2 && (
+          {showSuggest && inputValue.length >= 2 && (
             <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white border border-gray-100 rounded-xl shadow-xl max-h-60 overflow-y-auto">
               {suggestions.length > 0 ? (
                 suggestions.map((s, i) => (
                   <button
                     key={i}
-                    onClick={() => handleSelectSuggest(s)}
+                    onMouseDown={e => {
+                      e.preventDefault()
+                      handleSelectSuggest(s)
+                    }}
                     className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-primary-50 border-b border-gray-50 last:border-none flex items-center justify-between transition-colors"
                   >
                     <div className="flex items-center gap-3">
@@ -318,7 +386,7 @@ export default function Variants() {
           />
         </div>
 
-        <Button variant="primary" onClick={() => { setPage(1); loadVariants(1, limit); }} loading={loading}>Search</Button>
+        <Button variant="primary" onClick={() => handleSearchSubmit(inputValue)} loading={loading}>Search</Button>
       </div>
 
       <Grid

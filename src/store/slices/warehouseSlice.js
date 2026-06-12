@@ -58,9 +58,10 @@ export const fetchWarehouseInventorySummary = createAsyncThunk(
 
 export const fetchWarehouseInventoryRows = createAsyncThunk(
   'warehouse/fetchInventoryRows',
-  async ({ warehouseId, page, limit, filter, search }, { rejectWithValue }) => {
+  async ({ warehouseId, page, limit, filter, search, productId }, { rejectWithValue }) => {
     const params = new URLSearchParams({ page, limit, filter })
     if (search) params.set('search', search)
+    if (productId) params.set('product_id', productId)
     const res = await api.get(`/warehouse-inventory/warehouse/${warehouseId}?${params.toString()}`)
     if (!res.success) return rejectWithValue(res.message)
     return { data: res.data || [], pagination: res.pagination }
@@ -69,11 +70,13 @@ export const fetchWarehouseInventoryRows = createAsyncThunk(
 
 export const fetchWarehouseBatches = createAsyncThunk(
   'warehouse/fetchBatches',
-  async ({ warehouseId, page, limit, expiring_soon, expired_only, search }, { rejectWithValue }) => {
+  async ({ warehouseId, page, limit, expiring_soon, expired_only, search, variantId, productId }, { rejectWithValue }) => {
     const params = new URLSearchParams({ page, limit })
     if (expiring_soon) params.set('expiring_soon', 'true')
     if (expired_only) params.set('expired_only', 'true')
     if (search) params.set('search', search)
+    if (variantId) params.set('variant_id', variantId)
+    if (productId) params.set('product_id', productId)
     const res = await api.get(`/warehouse-inventory/warehouse/${warehouseId}/batches?${params.toString()}`)
     if (!res.success) return rejectWithValue(res.message)
     return { data: res.data || [], pagination: res.pagination }
