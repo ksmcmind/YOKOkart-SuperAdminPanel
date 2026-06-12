@@ -15,6 +15,7 @@ const NAV = [
     { to: '/stock-transfers', label: 'Stock Transfers', icon: '🚚' },
     { to: '/logs', label: 'Activity Logs', icon: '📜' },
     { to: '/staff', label: 'Staff', icon: '👥' },
+    { to: '/roles', label: 'Manage Roles', icon: '🛠️' },
     // { to: '/collections', label: 'Collections', icon: '💰' },
     // { to: '/categories', label: 'Categories', icon: '🗂️' },
     { to: '/products', label: 'Products', icon: '🛍️' },

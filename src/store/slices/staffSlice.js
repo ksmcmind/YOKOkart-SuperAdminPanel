@@ -63,6 +63,24 @@ export const fetchStaffRoles = createAsyncThunk(
   }
 )
 
+export const createStaffRole = createAsyncThunk(
+  'staff/createRole',
+  async (data, { rejectWithValue }) => {
+    const res = await api.post('/staff/roles', data)
+    if (!res.success) return rejectWithValue(res.message)
+    return res.data
+  }
+)
+
+export const toggleStaffRoleStatus = createAsyncThunk(
+  'staff/toggleRole',
+  async (role, { rejectWithValue }) => {
+    const res = await api.patch(`/staff/roles/${role}/toggle`)
+    if (!res.success) return rejectWithValue(res.message)
+    return res.data
+  }
+)
+
 const staffSlice = createSlice({
   name: 'staff',
   initialState: {
@@ -103,6 +121,13 @@ const staffSlice = createSlice({
     builder
       .addCase(fetchStaffRoles.fulfilled, (state, action) => {
         state.roles = action.payload || []
+      })
+      .addCase(createStaffRole.fulfilled, (state, action) => {
+        state.roles.push(action.payload)
+      })
+      .addCase(toggleStaffRoleStatus.fulfilled, (state, action) => {
+        const idx = state.roles.findIndex(r => r.role === action.payload.role)
+        if (idx !== -1) state.roles[idx] = action.payload
       })
   },
 })
