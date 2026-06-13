@@ -17,7 +17,7 @@ const NAV = [
     { to: '/staff', label: 'Staff', icon: '👥' },
     { to: '/roles', label: 'Manage Roles', icon: '🛠️' },
     // { to: '/collections', label: 'Collections', icon: '💰' },
-    // { to: '/categories', label: 'Categories', icon: '🗂️' },
+    { to: '/categories', label: 'Categories', icon: '🗂️' },
     { to: '/products', label: 'Products', icon: '🛍️' },
     { to: '/variants', label: 'Variants', icon: '🧬' },
     { to: '/brand-bulk-upload', label: 'Brand Upload', icon: '🏷️' },

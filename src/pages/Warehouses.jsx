@@ -70,8 +70,8 @@ export default function Warehouses() {
   }
 
   const handleSave = async () => {
-    if (!form.name || !form.city || !form.state || !form.address || !form.pincode) {
-      dispatch(showToast({ message: 'All location details are required', type: 'error' })); return
+    if (!form.name || !form.city || !form.state || !form.address || !form.pincode || !form.capacity_sqft) {
+      dispatch(showToast({ message: 'All details including Capacity/Occupied Space are required', type: 'error' })); return
     }
 
     setSaving(true)
@@ -204,7 +204,7 @@ export default function Warehouses() {
         </div>
       )
     }
-  ].filter(col => !isSuperAdmin || col.key !== 'actions')
+  ].filter(col => true)
 
   return (
     <div className="p-4 sm:p-6 space-y-4">
@@ -216,11 +216,9 @@ export default function Warehouses() {
             <Button variant="secondary" onClick={handleRefreshData}>
               🔄 Refresh
             </Button>
-            {!isSuperAdmin && (
-              <Button variant="primary" onClick={() => { setForm(EMPTY); setEditingWarehouse(null); setOpen(true) }}>
-                + Add Warehouse
-              </Button>
-            )}
+            <Button variant="primary" onClick={() => { setForm(EMPTY); setEditingWarehouse(null); setOpen(true) }}>
+              + Add Warehouse
+            </Button>
           </div>
         }
       />
@@ -256,7 +254,7 @@ export default function Warehouses() {
             </h4>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Input label="Warehouse Name *" placeholder="Central Warehouse 01" value={form.name} onChange={e => set('name', e.target.value)} />
-              <Input label="Capacity (SQFT)" type="number" placeholder="15000" value={form.capacity_sqft} onChange={e => set('capacity_sqft', e.target.value)} />
+              <Input label="Capacity / Max Storage Space (SQFT) *" type="number" placeholder="6000" value={form.capacity_sqft} onChange={e => set('capacity_sqft', e.target.value)} />
             </div>
           </section>
 
